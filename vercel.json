@@ -1,0 +1,7 @@
+{
+  "buildCommand": "cd frontend && npm install && npm run build",
+  "outputDirectory": "frontend/dist",
+  "env": {
+    "VITE_API_URL": "https://vet-api.142.132.233.38.sslip.io"
+  }
+}

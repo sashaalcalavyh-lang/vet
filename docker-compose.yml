@@ -1,18 +1,41 @@
 version: "3.8"
 
 services:
-  vet-app:
+  vet-db:
+    image: postgres:16-alpine
+    container_name: vet-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: vet_admin
+      POSTGRES_PASSWORD: VetSecurePostgres2026!
+      POSTGRES_DB: vet_saas_db
+    volumes:
+      - vet-pgdata:/var/lib/postgresql/data
+    networks:
+      - coolify
+    # SEGURIDAD: Sin puertos públicos mapeados (no expuesto a 0.0.0.0)
+
+  vet-backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: vet-app
+    container_name: vet-backend
     restart: always
     ports:
-      - "8090:8000"
+      - "127.0.0.1:8090:8000"  # Exclusivamente localhost del servidor
     environment:
       - APP_ENV=production
+      - DATABASE_URL=postgresql+psycopg2://vet_admin:VetSecurePostgres2026!@vet-postgres:5432/vet_saas_db
+      - REDIS_URL=redis://redis_broker:6379/3
+      - CORS_ORIGINS=*
+    depends_on:
+      - vet-db
     networks:
       - coolify
+
+volumes:
+  vet-pgdata:
+    name: vet-pgdata
 
 networks:
   coolify:

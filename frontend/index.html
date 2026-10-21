@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VetSaaS — Gestión Clínica & Fidelización por WhatsApp</title>
+  <meta name="description" content="Plataforma de alta velocidad para clínicas veterinarias: agendamiento ágil, fichas clínicas y recordatorios preventivos automatizados por WhatsApp.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Navbar -->
+    <header class="app-header">
+      <div class="header-content">
+        <div class="brand">
+          <div class="brand-logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="brand-title">VetSaaS <span class="badge-tag">Hybrid Core</span></h1>
+            <p class="brand-subtitle">Clínicas Veterinarias de Alta Frecuencia</p>
+          </div>
+        </div>
+        <div class="header-status">
+          <div class="status-pill" id="backend-status-pill">
+            <span class="status-dot pulsing"></span>
+            <span id="backend-status-text">Conectando Backend Hetzner...</span>
+          </div>
+          <div class="status-pill db-pill" id="db-status-pill">
+            <span class="db-icon">🗄️</span>
+            <span id="db-status-text">PostgreSQL 16</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="app-main">
+      <!-- KPI Stats Bar -->
+      <section class="kpi-grid">
+        <div class="kpi-card" id="kpi-citas-card">
+          <div class="kpi-icon teal">📅</div>
+          <div class="kpi-info">
+            <span class="kpi-label">Citas Programadas</span>
+            <h3 class="kpi-value" id="kpi-citas-count">0</h3>
+            <span class="kpi-trend">Agenda activa</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpi-pacientes-card">
+          <div class="kpi-icon indigo">🐾</div>
+          <div class="kpi-info">
+            <span class="kpi-label">Pacientes en Base</span>
+            <h3 class="kpi-value" id="kpi-pacientes-count">0</h3>
+            <span class="kpi-trend">Historial clínico</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpi-tutores-card">
+          <div class="kpi-icon emerald">👤</div>
+          <div class="kpi-info">
+            <span class="kpi-label">Tutores Registrados</span>
+            <h3 class="kpi-value" id="kpi-tutores-count">0</h3>
+            <span class="kpi-trend">Contactos validados</span>
+          </div>
+        </div>
+
+        <div class="kpi-card" id="kpi-wa-card">
+          <div class="kpi-icon green">💬</div>
+          <div class="kpi-info">
+            <span class="kpi-label">Canal WhatsApp</span>
+            <h3 class="kpi-value">Activo</h3>
+            <span class="kpi-trend success-text">n8n Hetzner Bridge</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Content Split Grid -->
+      <div class="content-split">
+        <!-- Left: Quick Appointment / Patient Form -->
+        <section class="panel-card form-panel">
+          <div class="panel-header">
+            <h2>⚡ Agendamiento Exprés</h2>
+            <p>Registra tutor, paciente y cita en una sola acción</p>
+          </div>
+
+          <form id="appointment-form" class="custom-form">
+            <div class="form-section-title">1. Datos del Tutor (Dueño)</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="tutor-nombre">Nombre Completo</label>
+                <input type="text" id="tutor-nombre" required placeholder="Ej. Camila Silva">
+              </div>
+              <div class="form-group">
+                <label for="tutor-telefono">WhatsApp (+569...)</label>
+                <input type="tel" id="tutor-telefono" required placeholder="+56912345678">
+              </div>
+            </div>
+
+            <div class="form-section-title">2. Datos de la Mascota</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="paciente-nombre">Nombre Mascota</label>
+                <input type="text" id="paciente-nombre" required placeholder="Ej. Thor">
+              </div>
+              <div class="form-group">
+                <label for="paciente-especie">Especie</label>
+                <select id="paciente-especie" required>
+                  <option value="Canino">Canino 🐶</option>
+                  <option value="Felino">Felino 🐱</option>
+                  <option value="Exótico">Exótico 🦜</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="paciente-raza">Raza</label>
+                <input type="text" id="paciente-raza" placeholder="Ej. Golden Retriever">
+              </div>
+              <div class="form-group">
+                <label for="paciente-peso">Peso (Kg)</label>
+                <input type="number" step="0.1" id="paciente-peso" required placeholder="14.5">
+              </div>
+            </div>
+
+            <div class="form-section-title">3. Detalle de la Cita</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="cita-fecha">Fecha y Hora</label>
+                <input type="datetime-local" id="cita-fecha" required>
+              </div>
+              <div class="form-group">
+                <label for="cita-motivo">Motivo / Tratamiento</label>
+                <input type="text" id="cita-motivo" required placeholder="Vacuna Óctuple + Control">
+              </div>
+            </div>
+
+            <button type="submit" class="btn-primary" id="btn-submit-appointment">
+              <span>Guardar Cita & Programar Recordatorio</span>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+            </button>
+          </form>
+        </section>
+
+        <!-- Right: Live Appointments Stream -->
+        <section class="panel-card list-panel">
+          <div class="panel-header flex-between">
+            <div>
+              <h2>📋 Agenda Activa</h2>
+              <p>Sincronización en vivo con PostgreSQL 16 en Hetzner</p>
+            </div>
+            <button class="btn-refresh" id="btn-refresh" title="Refrescar lista">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            </button>
+          </div>
+
+          <div class="appointments-container" id="appointments-list">
+            <div class="loading-state">
+              <span class="spinner"></span>
+              <p>Cargando citas desde la nube...</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Infrastructure Architecture Visualizer -->
+      <section class="architecture-banner">
+        <div class="arch-badge">Arquitectura Híbrida Operativa</div>
+        <div class="arch-nodes">
+          <div class="arch-node">
+            <span class="node-icon">▲</span>
+            <strong>Vercel Edge</strong>
+            <small>Frontend Global PWA</small>
+          </div>
+          <span class="arch-arrow">⟷ HTTPS REST ⟷</span>
+          <div class="arch-node">
+            <span class="node-icon">⚡</span>
+            <strong>Hetzner VPS</strong>
+            <small>FastAPI Core (Port 8090)</small>
+          </div>
+          <span class="arch-arrow">⟷ Docker Net ⟷</span>
+          <div class="arch-node secure">
+            <span class="node-icon">🔒</span>
+            <strong>PostgreSQL 16</strong>
+            <small>Aislado (Sin salida a Internet)</small>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>VetSaaS Micro-App Core • Desarrollado por Sebastián & Sasha • Conectado a Hetzner Cloud (Falkenstein, DE)</p>
+    </footer>
+  </div>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
