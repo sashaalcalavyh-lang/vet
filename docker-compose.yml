@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   vet-db:
     image: postgres:16-alpine
@@ -28,6 +26,10 @@ services:
       - DATABASE_URL=postgresql+psycopg2://vet_admin:VetSecurePostgres2026!@vet-postgres:5432/vet_saas_db
       - REDIS_URL=redis://redis_broker:6379/3
       - CORS_ORIGINS=*
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-latest}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://n8n_app:5678/webhook/vet-cita-alerta}
     depends_on:
       - vet-db
     networks:
