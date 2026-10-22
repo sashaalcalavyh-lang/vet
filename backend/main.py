@@ -44,6 +44,13 @@ class TutorDB(Base):
     telefono = Column(String(20), nullable=False, index=True)
     email = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    
+    # Cumplimiento Ley 21.719 (Chile) - Protección de Datos Personales
+    consentimiento_ley21719 = Column(Boolean, default=False)
+    fecha_consentimiento = Column(DateTime, nullable=True)
+    version_terminos = Column(String(20), default="v1.0-2026")
+    activo_whatsapp = Column(Boolean, default=True)
+
     pacientes = relationship("PacienteDB", back_populates="tutor")
     fiches = relationship("MedicalFicheDB", back_populates="tutor")
 
@@ -140,6 +147,13 @@ def run_safe_migrations(engine_instance):
             conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS monto_pago FLOAT DEFAULT 0.0;"))
             conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_estado VARCHAR(30) DEFAULT 'PENDING';"))
             conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(30);"))
+
+            # 3. Tutores: Trazabilidad y Consentimiento Ley 21.719 (Protección de Datos Personales Chile)
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS consentimiento_ley21719 BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS fecha_consentimiento TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS version_terminos VARCHAR(20) DEFAULT 'v1.0-2026';"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS activo_whatsapp BOOLEAN DEFAULT TRUE;"))
+
             conn.commit()
         logger.info("Migración segura de esquema (run_safe_migrations) ejecutada exitosamente.")
     except Exception as e:
@@ -1012,6 +1026,19 @@ class ClientIntentExtractionSchema(BaseModel):
         description="Clave exacta del protocolo de primeros auxilios aplicable: GI_VOMITO_AGUDO, TRAUMA_URGENCIAS, RESPIRATORIO_CRITICO o PREVENTIVO_RUTINA"
     )
 
+def mask_phone(phone: str) -> str:
+    """Enmascara números de teléfono para logs y reportes anonimizados conforme a Ley 21.719 (+569****1234)"""
+    if not phone:
+        return "****"
+    p = str(phone).strip()
+    if len(p) >= 8:
+        return f"{p[:4]}****{p[-4:]}"
+    return f"****{p[-2:]}" if len(p) >= 3 else "****"
+
+class PrivacyOptOutRequest(BaseModel):
+    telefono: str = Field(..., example="+56912345678")
+    tipo_solicitud: str = Field(default="opt_out", description="'opt_out' (baja de WhatsApp) o 'supresion' (anonimización completa)")
+
 class TriageExecuteRequest(BaseModel):
     tutor_telefono: str = Field(..., example="+56912345678")
     tutor_nombre: str = Field(..., example="Constanza Pérez")
@@ -1023,6 +1050,7 @@ class TriageExecuteRequest(BaseModel):
     urgency_level: str = Field(default="LOW", example="HIGH") # HIGH, MEDIUM, LOW
     motivo_resumido: str = Field(..., example="Vómito agudo felino")
     first_aid_protocol_id: str = Field(default="PREVENTIVO_RUTINA", example="GI_VOMITO_AGUDO")
+    consentimiento_ley21719: bool = Field(default=False, description="Consentimiento expreso conforme a Ley 21.719 de Protección de Datos")
 
 # -------------------------------------------------------------
 # 10. Los 3 Endpoints del Agente Autónomo de Clientes
@@ -1267,11 +1295,20 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
     paciente_reconocido = False
     historial_clinico_previo = "Paciente nuevo. Sin atenciones previas registradas."
 
+    now = datetime.datetime.utcnow()
+
     if tutor:
         paciente_reconocido = True
         if clean_tutor_name != "Tutor CoVet" and tutor.nombre != clean_tutor_name:
             tutor.nombre = clean_tutor_name
-            db.commit()
+        
+        # Registro trazable Ley 21.719 si otorga consentimiento
+        if req.consentimiento_ley21719:
+            tutor.consentimiento_ley21719 = True
+            tutor.fecha_consentimiento = now
+            tutor.version_terminos = "v1.0-2026"
+            tutor.activo_whatsapp = True
+        db.commit()
 
         paciente = db.query(PacienteDB).filter(
             PacienteDB.tutor_id == tutor.id,
@@ -1308,7 +1345,14 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         else:
             historial_clinico_previo = f"Tutor recurrente ({tutor.nombre}). Mascota: {paciente.nombre} ({paciente.especie})."
     else:
-        tutor = TutorDB(nombre=clean_tutor_name, telefono=clean_phone)
+        tutor = TutorDB(
+            nombre=clean_tutor_name,
+            telefono=clean_phone,
+            consentimiento_ley21719=req.consentimiento_ley21719,
+            fecha_consentimiento=now if req.consentimiento_ley21719 else None,
+            version_terminos="v1.0-2026",
+            activo_whatsapp=True
+        )
         db.add(tutor)
         db.commit()
         db.refresh(tutor)
@@ -1323,6 +1367,8 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         db.add(paciente)
         db.commit()
         db.refresh(paciente)
+
+    logger.info(f"[Triaje] Ejecutado para tutor {mask_phone(clean_phone)} | Mascota: {clean_pet_name} | Consentimiento Ley 21.719: {req.consentimiento_ley21719}")
 
     # Acción Agéntica 2: Bloqueo Temporal HOLD_15_MIN
     modalidad_clean = req.modalidad.upper() if req.modalidad else "DOMICILIO"
@@ -1601,4 +1647,198 @@ def confirmar_pago_cita_legacy(
             "telefono": tutor.telefono if tutor else ""
         }
     }
+
+
+# =============================================================
+# 11. CUMPLIMIENTO LEY 21.719 — ENDPOINTS DE DERECHOS ARSOP+
+# =============================================================
+
+@app.get("/api/v1/covet/privacy/export/{telefono}")
+def exportar_datos_personales(telefono: str, db: Session = Depends(get_db)):
+    """
+    Derecho de Portabilidad (Ley 21.719 Art. 5):
+    Permite al titular o tutor descargar en formato estructurado, interoperable
+    y legible por máquina (JSON) todos sus datos de contacto, consentimientos,
+    mascotas registradas y fichas clínicas estructuradas.
+    """
+    clean_phone = telefono.strip()
+    tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+    if not tutor:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se encontraron registros de datos personales para el número consultado ({mask_phone(clean_phone)})."
+        )
+
+    pacientes = db.query(PacienteDB).filter(PacienteDB.tutor_id == tutor.id).all()
+    pacientes_data = []
+
+    for p in pacientes:
+        citas = db.query(CitaDB).filter(CitaDB.paciente_id == p.id).all()
+        fiches = db.query(MedicalFicheDB).filter(MedicalFicheDB.paciente_id == p.id).all()
+
+        pacientes_data.append({
+            "id": p.id,
+            "nombre": p.nombre,
+            "especie": p.especie,
+            "raza": p.raza,
+            "peso_kg": p.peso_kg,
+            "fecha_registro": p.created_at.isoformat() if p.created_at else None,
+            "citas_historial": [
+                {
+                    "cita_id": c.id,
+                    "fecha_hora": c.fecha_hora.isoformat() if c.fecha_hora else None,
+                    "motivo": c.motivo,
+                    "modalidad": c.modalidad or c.tipo_atencion,
+                    "estado_reserva": c.estado_reserva or c.estado_cita,
+                    "monto_clp": c.monto_clp
+                }
+                for c in citas
+            ],
+            "fiches_clinicas": [
+                {
+                    "fiche_id": str(f.id),
+                    "fecha_creacion": f.fecha_creacion.isoformat() if f.fecha_creacion else None,
+                    "estado": f.estado_procesamiento,
+                    "soap": f.json_estructurado
+                }
+                for f in fiches
+            ]
+        })
+
+    logger.info(f"[Privacidad Ley 21.719] Exportación de datos solicitada para tutor {mask_phone(clean_phone)}")
+
+    return {
+        "estatus_legal": "CUMPLIMIENTO_LEY_21719_PORTABILIDAD",
+        "normativa_aplicable": "Ley N° 21.719 sobre Protección de Datos Personales (Chile)",
+        "fecha_emision": datetime.datetime.utcnow().isoformat(),
+        "titular": {
+            "id": tutor.id,
+            "nombre": tutor.nombre,
+            "telefono": tutor.telefono,
+            "email": tutor.email,
+            "consentimiento_ley21719": tutor.consentimiento_ley21719,
+            "fecha_consentimiento": tutor.fecha_consentimiento.isoformat() if tutor.fecha_consentimiento else None,
+            "version_terminos": tutor.version_terminos,
+            "activo_notificaciones_whatsapp": tutor.activo_whatsapp,
+            "fecha_registro": tutor.created_at.isoformat() if tutor.created_at else None
+        },
+        "pacientes": pacientes_data
+    }
+
+
+@app.post("/api/v1/covet/privacy/opt-out")
+def ejercer_derecho_supresion_oposicion(req: PrivacyOptOutRequest, db: Session = Depends(get_db)):
+    """
+    Derecho de Supresión / Oposición (Ley 21.719 Art. 6 y 7):
+    - 'opt_out': Revoca consentimiento para mensajes y recordatorios comerciales/WhatsApp (activo_whatsapp=False).
+    - 'supresion': Disocia y anonimiza los datos personales de contacto conservando únicamente las estadísticas clínicas disociadas para fines de salud animal.
+    """
+    clean_phone = req.telefono.strip()
+    tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+    if not tutor:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No se encontró registro para el teléfono {mask_phone(clean_phone)}"
+        )
+
+    solicitud = req.tipo_solicitud.lower()
+    ahora = datetime.datetime.utcnow()
+
+    if solicitud == "supresion":
+        # Anonimización disociada (irreversible para datos de contacto personales)
+        original_masked = mask_phone(tutor.telefono)
+        tutor.nombre = f"Tutor Anonimizado #{tutor.id}"
+        tutor.email = None
+        tutor.telefono = f"+569000000{tutor.id:04d}"
+        tutor.activo_whatsapp = False
+        tutor.consentimiento_ley21719 = False
+        tutor.version_terminos = "REVOCADO_ANON"
+        db.commit()
+
+        logger.info(f"[Privacidad Ley 21.719] Supresión/Anonimización ejecutada para {original_masked}")
+        return {
+            "status": "DATOS_ANONIMIZADOS",
+            "mensaje": "Tus datos personales identificables han sido suprimidos y disociados conforme a la Ley 21.719. Las estadísticas clínicas permanecen en forma anónima para trazabilidad epidemiológica veterinaria.",
+            "fecha": ahora.isoformat()
+        }
+    else:
+        # Baja de notificaciones y WhatsApp (Oposición a tratamiento para comunicaciones)
+        tutor.activo_whatsapp = False
+        db.commit()
+
+        logger.info(f"[Privacidad Ley 21.719] Oposición a WhatsApp registrada para {mask_phone(clean_phone)}")
+        return {
+            "status": "OPT_OUT_EXITOSO",
+            "mensaje": "Has revocado el consentimiento para recibir comunicaciones y alertas por WhatsApp. Tus datos clínicos permanecen protegidos.",
+            "activo_whatsapp": False,
+            "fecha": ahora.isoformat()
+        }
+
+
+# =============================================================
+# 12. ENDPOINT EJECUTIVO SUPERADMIN — SASHA
+# =============================================================
+
+@app.get("/api/v1/covet/admin/metrics")
+def obtener_metricas_superadmin(db: Session = Depends(get_db)):
+    """
+    Panel Ejecutivo de Métricas para Sasha (SuperAdmin):
+    - Conteo de tutores con consentimiento Ley 21.719 firmado vs totales.
+    - Citas en HOLD_15_MIN vs CONFIRMED.
+    - Fichas SOAP procesadas.
+    - Estado de salud de integraciones (Groq, Anthropic, n8n, Postgres).
+    """
+    total_tutores = db.query(TutorDB).count()
+    tutores_consentimiento = db.query(TutorDB).filter(TutorDB.consentimiento_ley21719 == True).count()
+    tutores_activos_whatsapp = db.query(TutorDB).filter(TutorDB.activo_whatsapp == True).count()
+
+    total_citas = db.query(CitaDB).count()
+    citas_hold = db.query(CitaDB).filter(
+        (CitaDB.estado_reserva == "HOLD_15_MIN") | (CitaDB.estado_cita == "HOLD_15_MIN")
+    ).count()
+    citas_confirmed = db.query(CitaDB).filter(
+        (CitaDB.estado_reserva == "CONFIRMED") | (CitaDB.confirmada == True)
+    ).count()
+
+    total_fiches = db.query(MedicalFicheDB).count()
+    fiches_ready = db.query(MedicalFicheDB).filter(MedicalFicheDB.estado_procesamiento == "READY_FOR_REVIEW").count()
+    fiches_confirmed = db.query(MedicalFicheDB).filter(
+        MedicalFicheDB.estado_procesamiento.in_(["CONFIRMED_AND_SENT", "CONFIRMED_N8N_PENDING"])
+    ).count()
+
+    # Chequeo de Postgres
+    db_ok = True
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+
+    return {
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "plataforma": "CoVet SaaS Core v2.0",
+        "servidor": "VPS Hetzner Ubuntu 24.04 (142.132.233.38)",
+        "cumplimiento_ley21719": {
+            "total_tutores": total_tutores,
+            "tutores_con_consentimiento": tutores_consentimiento,
+            "tasa_consentimiento_pct": round((tutores_consentimiento / total_tutores * 100), 1) if total_tutores > 0 else 100.0,
+            "activos_whatsapp": tutores_activos_whatsapp
+        },
+        "metricas_citas": {
+            "total_citas": total_citas,
+            "citas_en_hold_15_min": citas_hold,
+            "citas_confirmadas": citas_confirmed
+        },
+        "metricas_soap": {
+            "total_fichas": total_fiches,
+            "listas_para_revision": fiches_ready,
+            "confirmadas_y_despachadas": fiches_confirmed
+        },
+        "integraciones": {
+            "postgresql_16": "ONLINE" if db_ok else "OFFLINE",
+            "groq_whisper": "CONFIGURADO" if bool(os.getenv("GROQ_API_KEY")) else "FALTA_KEY",
+            "anthropic_claude": "CONFIGURADO" if bool(os.getenv("ANTHROPIC_API_KEY")) else "FALTA_KEY",
+            "n8n_webhook": "CONFIGURADO" if bool(os.getenv("N8N_WEBHOOK_URL")) else "URL_DEFAULT_LOCAL"
+        }
+    }
+
 

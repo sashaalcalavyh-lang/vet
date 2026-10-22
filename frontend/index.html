@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
   <title>CoVet — Micro-App de Triaje Clínico & Fichas con IA</title>
   <meta name="description" content="Plataforma médica veterinaria: triaje clínico inteligente para tutores, primeros auxilios y dictado SOAP con IA para veterinarios.">
   <meta name="theme-color" content="#0d9488">
@@ -13,18 +13,22 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
-<body class="theme-light" data-theme="clinical-light">
+<body class="theme-light" data-theme="clinical-light" data-active-view="client">
   <div class="app-wrapper">
-    <!-- Barra Superior de Control: Switch Dual de Venta + Selector de Tema -->
+    <!-- Barra Superior de Control: Switch Triple de Entrada + Selector de Tema -->
     <header class="top-control-bar">
       <div class="mode-switch-pill" role="tablist">
-        <button class="mode-btn active" id="btn-mode-client" data-mode="client" role="tab" aria-selected="true">
+        <button class="mode-btn active" id="btn-mode-client" data-mode="client" role="tab" aria-selected="true" title="Micro-App de Intención para Tutores">
           <span class="mode-icon">🐾</span>
-          <span class="mode-text">Vista Tutor (Cliente)</span>
+          <span class="mode-text">Vista Tutor</span>
         </button>
-        <button class="mode-btn" id="btn-mode-vet" data-mode="vet" role="tab" aria-selected="false">
+        <button class="mode-btn" id="btn-mode-vet" data-mode="vet" role="tab" aria-selected="false" title="Panel Clínico Médico Veterinario">
           <span class="mode-icon">🩺</span>
           <span class="mode-text">Modo Veterinario</span>
+        </button>
+        <button class="mode-btn mode-btn-admin" id="btn-mode-admin" data-mode="admin" role="tab" aria-selected="false" title="Panel Ejecutivo SuperAdmin Sasha">
+          <span class="mode-icon">⚡</span>
+          <span class="mode-text">Sasha Admin</span>
         </button>
       </div>
 
@@ -173,6 +177,19 @@
           
           <div class="hybrid-schedule-container" id="hybrid-schedule-container">
             <!-- Se inyecta dinámicamente según urgency_level (HIGH vs MEDIUM/LOW) -->
+          </div>
+
+          <!-- D) Consentimiento Expreso Ley 21.719 Chile (Protección de Datos Personales) -->
+          <div class="privacy-consent-box">
+            <label class="privacy-checkbox-label" for="client-consent-ley21719">
+              <input type="checkbox" id="client-consent-ley21719" required class="privacy-checkbox">
+              <span class="privacy-consent-text">
+                Acepto el tratamiento de mis datos de contacto para gestión clínica, envío de recetas/alertas por WhatsApp y procesamiento asistido por IA conforme a la <strong>Ley 21.719</strong>.
+              </span>
+            </label>
+            <button type="button" class="btn-privacy-modal-toggle" id="btn-open-privacy-modal">
+              📋 Ver Política de Privacidad y Uso de IA
+            </button>
           </div>
 
           <!-- Botón para Bloquear Cupo -->
@@ -727,6 +744,176 @@
         </section>
       </main>
     </section>
+
+    <!-- ======================================================= -->
+    <!-- VISTA 3: PANEL EJECUTIVO SUPERADMIN — SASHA (#view-admin) -->
+    <!-- ======================================================= -->
+    <section class="view-container hidden" id="view-admin">
+      <div class="admin-header-row">
+        <div class="admin-title-box">
+          <div class="admin-badge">⚡ SUPERADMIN CONSOLE • SASHA ALCALÁ</div>
+          <h2>Centro de Operaciones y Métricas CoVet</h2>
+          <p>Monitoreo en vivo de infraestructura Hetzner VPS, trazabilidad Ley 21.719 y flujos agénticos.</p>
+        </div>
+        <div class="admin-actions-top">
+          <button type="button" class="btn-admin-refresh" id="btn-admin-refresh-metrics">
+            🔄 Refrescar Métricas en Vivo
+          </button>
+        </div>
+      </div>
+
+      <!-- Métricas Clave SaaS -->
+      <div class="admin-kpi-grid">
+        <div class="glass-panel admin-kpi-card">
+          <span class="kpi-label">Tutores con Consentimiento Ley 21.719</span>
+          <div class="kpi-value-row">
+            <span class="kpi-num" id="admin-kpi-consent">0</span>
+            <span class="kpi-tag success" id="admin-kpi-consent-pct">100%</span>
+          </div>
+          <span class="kpi-sub" id="admin-kpi-total-tutores">de 0 tutores totales registrados</span>
+        </div>
+
+        <div class="glass-panel admin-kpi-card">
+          <span class="kpi-label">Citas en Agenda CoVet</span>
+          <div class="kpi-value-row">
+            <span class="kpi-num" id="admin-kpi-confirmed-citas">0</span>
+            <span class="kpi-tag" id="admin-kpi-hold-citas">0 en HOLD 15m</span>
+          </div>
+          <span class="kpi-sub" id="admin-kpi-total-citas">0 citas totales generadas</span>
+        </div>
+
+        <div class="glass-panel admin-kpi-card">
+          <span class="kpi-label">Fichas SOAP con IA</span>
+          <div class="kpi-value-row">
+            <span class="kpi-num" id="admin-kpi-soap-fiches">0</span>
+            <span class="kpi-tag info" id="admin-kpi-soap-ready">0 listas revisión</span>
+          </div>
+          <span class="kpi-sub" id="admin-kpi-soap-sent">0 despachadas a WhatsApp</span>
+        </div>
+      </div>
+
+      <!-- Estado en Vivo de Infraestructura (Hetzner VPS + AI APIs) -->
+      <div class="glass-panel admin-health-panel">
+        <div class="panel-section-title">
+          <h3>🩺 Estado en Vivo de Infraestructura Hetzner (142.132.233.38)</h3>
+          <span class="vps-tag">Ubuntu 24.04 • Coolify • Docker</span>
+        </div>
+        <div class="admin-services-grid">
+          <div class="service-chip" id="chip-status-db">
+            <span class="service-dot online"></span>
+            <div class="service-info">
+              <strong>PostgreSQL 16</strong>
+              <small id="chip-db-sub">Conectado (vet-postgres)</small>
+            </div>
+          </div>
+          <div class="service-chip" id="chip-status-groq">
+            <span class="service-dot online"></span>
+            <div class="service-info">
+              <strong>Groq Whisper Turbo</strong>
+              <small id="chip-groq-sub">API Configurada</small>
+            </div>
+          </div>
+          <div class="service-chip" id="chip-status-claude">
+            <span class="service-dot online"></span>
+            <div class="service-info">
+              <strong>Anthropic Claude 3.5</strong>
+              <small id="chip-claude-sub">API Configurada</small>
+            </div>
+          </div>
+          <div class="service-chip" id="chip-status-n8n">
+            <span class="service-dot online"></span>
+            <div class="service-info">
+              <strong>Webhook n8n WhatsApp</strong>
+              <small id="chip-n8n-sub">n8n_app (Coolify)</small>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Acciones de Prueba & Compliance -->
+      <div class="glass-panel admin-actions-panel">
+        <div class="panel-section-title">
+          <h3>⚡ Acciones Rápidas de Diagnóstico</h3>
+          <p>Herramientas de testing en 1 clic para validar pipelines antes de reuniones de venta.</p>
+        </div>
+        <div class="admin-quick-buttons">
+          <button type="button" class="btn-admin-action" id="btn-admin-test-n8n">
+            <span>📲</span> Probar Notificación n8n WhatsApp
+          </button>
+          <button type="button" class="btn-admin-action" id="btn-admin-export-arsop">
+            <span>📥</span> Exportar Datos ARSOP+ en JSON
+          </button>
+          <button type="button" class="btn-admin-action" id="btn-admin-switch-client">
+            <span>🐾</span> Abrir Micro-App Cliente
+          </button>
+          <button type="button" class="btn-admin-action" id="btn-admin-switch-vet">
+            <span>🩺</span> Abrir Modo Veterinario
+          </button>
+        </div>
+
+        <!-- Consola de Resultados Rápidos de SuperAdmin -->
+        <div class="admin-console-box hidden" id="admin-console-box">
+          <div class="console-header">
+            <span>Terminal de Diagnóstico Sasha</span>
+            <button type="button" id="btn-close-admin-console" class="btn-console-close">Limpiar</button>
+          </div>
+          <pre class="console-body font-mono" id="admin-console-body"></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- MODAL POLÍTICA DE PRIVACIDAD Y USO DE IA (LEY 21.719 CHILE) -->
+    <div class="modal-backdrop hidden" id="modal-privacy-policy">
+      <div class="glass-panel modal-privacy-card">
+        <div class="modal-privacy-header">
+          <div class="privacy-icon-pill">⚖️ LEY 21.719 CHILE</div>
+          <h3>Política de Privacidad, Uso Ético de IA y Derechos ARSOP+</h3>
+          <button type="button" class="btn-close-modal" id="btn-close-privacy-modal" title="Cerrar modal">&times;</button>
+        </div>
+        <div class="modal-privacy-body">
+          <div class="privacy-item">
+            <strong>(a) Finalidad Exclusivamente Médico-Veterinaria:</strong>
+            <p>Tus datos de contacto (WhatsApp, nombre) y los de tu mascota son recolectados con el único fin de gestionar la atención médica veterinaria, coordinar visitas a domicilio o telemedicina y remitir recetas, indicaciones clínicas o alertas de seguimiento.</p>
+          </div>
+          <div class="privacy-item">
+            <strong>(b) Efimeridad de Grabaciones de Voz:</strong>
+            <p>Cualquier nota de voz grabada durante el triaje o dictado clínico se procesa exclusivamente en memoria volátil (/tmp/covet_audios/) y es eliminada de manera inmediata y definitiva apenas concluye la transcripción (Zero Audio Retention).</p>
+          </div>
+          <div class="privacy-item">
+            <strong>(c) Procesamiento Seguro y Cifrado de IA:</strong>
+            <p>El procesamiento de triaje y estructuración SOAP se realiza a través de APIs empresariales seguras con cifrado TLS 1.3 (Groq Whisper Large Turbo y Anthropic Claude 3.5 Sonnet) bajo acuerdos estrictos de confidencialidad y no-entrenamiento con datos de pacientes.</p>
+          </div>
+          <div class="privacy-item">
+            <strong>(d) Ejercicio de Derechos ARSOP+:</strong>
+            <p>Conforme a la Ley N° 21.719, tienes derecho a Acceso, Rectificación, Supresión, Oposición y Portabilidad. Puedes solicitar la exportación completa de tus datos en JSON o revocar tu consentimiento en cualquier momento mediante nuestra API (<code>/api/v1/covet/privacy/export</code> y <code>/opt-out</code>) o solicitándolo al equipo médico.</p>
+          </div>
+        </div>
+        <div class="modal-privacy-footer">
+          <button type="button" class="btn-modal-understand" id="btn-understand-privacy">Entendido y Conforme</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DE PIN PARA MODO VETERINARIO -->
+    <div class="modal-backdrop hidden" id="modal-vet-pin">
+      <div class="glass-panel modal-pin-card">
+        <div class="modal-pin-header">
+          <span class="pin-shield-icon">🩺</span>
+          <h3>Ingreso Médico Veterinario</h3>
+          <p>Ingresa tu PIN clínico para desbloquear la sesión médica y acceder a las fichas de pacientes.</p>
+        </div>
+        <div class="pin-input-wrap">
+          <input type="password" id="input-vet-pin" maxlength="6" class="pin-input font-mono" placeholder="••••" autofocus>
+          <div class="pin-error-text hidden" id="pin-error-text">PIN incorrecto. Reintenta con 2026.</div>
+        </div>
+        <div class="pin-actions-wrap">
+          <button type="button" class="btn-pin-submit" id="btn-submit-vet-pin">Desbloquear Panel</button>
+          <button type="button" class="btn-pin-demo-autofill" id="btn-autofill-demo-pin">
+            ⚡ Demo Auto-Desbloqueo (PIN: 2026)
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- Footer General -->
     <footer class="app-footer">

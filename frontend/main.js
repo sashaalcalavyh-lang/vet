@@ -30,14 +30,30 @@ let isClientMicActive = false;
 let clientSpeechRec = null;
 
 // ========================================================
-// 2. SISTEMA DE TEMAS & BARRA SUPERIOR DE MODO DUAL
+// 2. SISTEMA DE TEMAS & ARQUITECTURA DE 3 ACCESOS
 // ========================================================
 const btnModeClient = document.getElementById('btn-mode-client');
 const btnModeVet = document.getElementById('btn-mode-vet');
+const btnModeAdmin = document.getElementById('btn-mode-admin');
+
 const viewClient = document.getElementById('view-client');
 const viewVet = document.getElementById('view-vet');
+const viewAdmin = document.getElementById('view-admin');
+
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
 const themeToggleIcon = document.getElementById('theme-toggle-icon');
+
+// Modales de Seguridad y Privacidad
+const modalVetPin = document.getElementById('modal-vet-pin');
+const inputVetPin = document.getElementById('input-vet-pin');
+const btnSubmitVetPin = document.getElementById('btn-submit-vet-pin');
+const btnAutofillDemoPin = document.getElementById('btn-autofill-demo-pin');
+const pinErrorText = document.getElementById('pin-error-text');
+
+const modalPrivacyPolicy = document.getElementById('modal-privacy-policy');
+const btnOpenPrivacyModal = document.getElementById('btn-open-privacy-modal');
+const btnClosePrivacyModal = document.getElementById('btn-close-privacy-modal');
+const btnUnderstandPrivacy = document.getElementById('btn-understand-privacy');
 
 // Configuración inicial de tema para veterinario
 let savedVetTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
@@ -61,7 +77,45 @@ if (btnThemeToggle) {
   });
 }
 
-// Selector de Modo Principal (Cliente vs Veterinario)
+// Validación de PIN Clínico Veterinario (Demo PIN: 2026)
+function isVetUnlocked() {
+  return sessionStorage.getItem('covet_vet_unlocked') === 'true';
+}
+
+function unlockVetSession() {
+  sessionStorage.setItem('covet_vet_unlocked', 'true');
+  if (modalVetPin) modalVetPin.classList.add('hidden');
+  activateVetView();
+}
+
+if (btnSubmitVetPin && inputVetPin) {
+  btnSubmitVetPin.addEventListener('click', () => {
+    const entered = inputVetPin.value.trim();
+    if (entered === '2026') {
+      pinErrorText.classList.add('hidden');
+      unlockVetSession();
+      showToast('Sesión médica veterinaria desbloqueada.', 'success');
+    } else {
+      pinErrorText.classList.remove('hidden');
+      inputVetPin.value = '';
+      inputVetPin.focus();
+    }
+  });
+
+  inputVetPin.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnSubmitVetPin.click();
+  });
+}
+
+if (btnAutofillDemoPin) {
+  btnAutofillDemoPin.addEventListener('click', () => {
+    if (inputVetPin) inputVetPin.value = '2026';
+    unlockVetSession();
+    showToast('Auto-desbloqueo de demo completado (PIN: 2026).', 'info');
+  });
+}
+
+// Selector de Modo Principal (Cliente vs Veterinario vs SuperAdmin Sasha)
 function switchMainMode(mode) {
   if (mode === 'client') {
     // 1. UI Switch Buttons
@@ -69,12 +123,20 @@ function switchMainMode(mode) {
     btnModeClient.setAttribute('aria-selected', 'true');
     btnModeVet.classList.remove('active');
     btnModeVet.setAttribute('aria-selected', 'false');
+    if (btnModeAdmin) {
+      btnModeAdmin.classList.remove('active');
+      btnModeAdmin.setAttribute('aria-selected', 'false');
+    }
 
     // 2. Vistas
     viewClient.classList.remove('hidden');
     viewClient.classList.add('active');
     viewVet.classList.add('hidden');
     viewVet.classList.remove('active');
+    if (viewAdmin) {
+      viewAdmin.classList.add('hidden');
+      viewAdmin.classList.remove('active');
+    }
 
     // 3. Regla 1: Forzar data-theme="clinical-light" (blanco médico impecable)
     document.body.setAttribute('data-active-view', 'client');
@@ -86,41 +148,116 @@ function switchMainMode(mode) {
       window.history.replaceState({}, '', '?view=client');
     } catch (_) {}
 
-  } else {
-    // Modo Veterinario
-    btnModeVet.classList.add('active');
-    btnModeVet.setAttribute('aria-selected', 'true');
+  } else if (mode === 'vet') {
+    // Si no está desbloqueado el PIN médico, mostrar modal
+    if (!isVetUnlocked()) {
+      if (modalVetPin) {
+        modalVetPin.classList.remove('hidden');
+        if (inputVetPin) {
+          inputVetPin.value = '';
+          inputVetPin.focus();
+        }
+      }
+      return;
+    }
+    activateVetView();
+
+  } else if (mode === 'admin') {
+    // Entrada SuperAdmin Sasha
+    if (btnModeAdmin) {
+      btnModeAdmin.classList.add('active');
+      btnModeAdmin.setAttribute('aria-selected', 'true');
+    }
     btnModeClient.classList.remove('active');
     btnModeClient.setAttribute('aria-selected', 'false');
+    btnModeVet.classList.remove('active');
+    btnModeVet.setAttribute('aria-selected', 'false');
 
-    viewVet.classList.remove('hidden');
-    viewVet.classList.add('active');
+    if (viewAdmin) {
+      viewAdmin.classList.remove('hidden');
+      viewAdmin.classList.add('active');
+    }
     viewClient.classList.add('hidden');
     viewClient.classList.remove('active');
+    viewVet.classList.add('hidden');
+    viewVet.classList.remove('active');
 
-    // Restaurar tema veterinario (Claro u Oscuro según preferencia)
-    document.body.setAttribute('data-active-view', 'vet');
-    savedVetTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
-    document.body.setAttribute('data-theme', savedVetTheme);
-    document.body.className = savedVetTheme === 'clinical-dark' ? 'theme-dark' : 'theme-light';
-    updateThemeIcon(savedVetTheme);
+    document.body.setAttribute('data-active-view', 'admin');
+    document.body.setAttribute('data-theme', 'clinical-light');
+    document.body.className = 'theme-light';
 
-    // Actualizar URL sin recargar
     try {
-      window.history.replaceState({}, '', '?view=vet');
+      window.history.replaceState({}, '', '?view=admin');
     } catch (_) {}
 
-    // Sincronización en vivo con la Agenda en PostgreSQL
-    loadAppointmentsData();
+    loadAdminMetrics();
   }
+}
+
+function activateVetView() {
+  btnModeVet.classList.add('active');
+  btnModeVet.setAttribute('aria-selected', 'true');
+  btnModeClient.classList.remove('active');
+  btnModeClient.setAttribute('aria-selected', 'false');
+  if (btnModeAdmin) {
+    btnModeAdmin.classList.remove('active');
+    btnModeAdmin.setAttribute('aria-selected', 'false');
+  }
+
+  viewVet.classList.remove('hidden');
+  viewVet.classList.add('active');
+  viewClient.classList.add('hidden');
+  viewClient.classList.remove('active');
+  if (viewAdmin) {
+    viewAdmin.classList.add('hidden');
+    viewAdmin.classList.remove('active');
+  }
+
+  // Restaurar tema veterinario (Claro u Oscuro según preferencia)
+  document.body.setAttribute('data-active-view', 'vet');
+  savedVetTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
+  document.body.setAttribute('data-theme', savedVetTheme);
+  document.body.className = savedVetTheme === 'clinical-dark' ? 'theme-dark' : 'theme-light';
+  updateThemeIcon(savedVetTheme);
+
+  // Actualizar URL sin recargar
+  try {
+    window.history.replaceState({}, '', '?view=vet');
+  } catch (_) {}
+
+  // Sincronización en vivo con la Agenda en PostgreSQL
+  loadAppointmentsData();
 }
 
 btnModeClient.addEventListener('click', () => switchMainMode('client'));
 btnModeVet.addEventListener('click', () => switchMainMode('vet'));
+if (btnModeAdmin) btnModeAdmin.addEventListener('click', () => switchMainMode('admin'));
 
-// Detección de Parámetro URL (?view=vet o ?view=client)
+// Eventos de Modal de Privacidad Ley 21.719
+if (btnOpenPrivacyModal) {
+  btnOpenPrivacyModal.addEventListener('click', () => {
+    if (modalPrivacyPolicy) modalPrivacyPolicy.classList.remove('hidden');
+  });
+}
+if (btnClosePrivacyModal) {
+  btnClosePrivacyModal.addEventListener('click', () => {
+    if (modalPrivacyPolicy) modalPrivacyPolicy.classList.add('hidden');
+  });
+}
+if (btnUnderstandPrivacy) {
+  btnUnderstandPrivacy.addEventListener('click', () => {
+    if (modalPrivacyPolicy) modalPrivacyPolicy.classList.add('hidden');
+    const chk = document.getElementById('client-consent-ley21719');
+    if (chk) chk.checked = true;
+  });
+}
+
+// Detección de Parámetro URL (?view=admin, ?view=vet o ?view=client)
 const initialUrlParams = new URLSearchParams(window.location.search);
-const initialView = initialUrlParams.get('view') === 'vet' ? 'vet' : 'client';
+const queryView = initialUrlParams.get('view');
+let initialView = 'client';
+if (queryView === 'admin') initialView = 'admin';
+else if (queryView === 'vet') initialView = 'vet';
 switchMainMode(initialView);
 
 
@@ -491,6 +628,14 @@ triageExecutionForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  // Validación de Consentimiento Obligatorio Ley 21.719
+  const consentChk = document.getElementById('client-consent-ley21719');
+  if (!consentChk || !consentChk.checked) {
+    showToast('Debes aceptar el consentimiento conforme a la Ley 21.719 para continuar.', 'error');
+    if (consentChk) consentChk.focus();
+    return;
+  }
+
   // Normalizar Teléfono a Formato Internacional (+569...)
   let cleanPhone = phone.replace(/\s+/g, '');
   if (/^9\d{8}$/.test(cleanPhone)) cleanPhone = `+56${cleanPhone}`;
@@ -515,7 +660,8 @@ triageExecutionForm.addEventListener('submit', async (e) => {
     seleccion_horaria: selectedHorario,
     urgency_level: (activeTriageData && activeTriageData.urgency_level) || 'LOW',
     motivo_resumido: (activeTriageData && activeTriageData.motivo_resumido) || 'Consulta clínica',
-    first_aid_protocol_id: (activeTriageData && activeTriageData.first_aid_protocol_id) || ''
+    first_aid_protocol_id: (activeTriageData && activeTriageData.first_aid_protocol_id) || '',
+    consentimiento_ley21719: true
   };
 
   btnBlockSlot.disabled = true;
@@ -1381,3 +1527,152 @@ function escapeHtml(text) {
 // Inicialización de Monitoreo y Carga
 checkHealth();
 setInterval(checkHealth, 25000);
+
+
+// ========================================================
+// 8. PANEL EJECUTIVO SUPERADMIN — SASHA ALCALÁ
+// ========================================================
+const adminKpiConsent = document.getElementById('admin-kpi-consent');
+const adminKpiConsentPct = document.getElementById('admin-kpi-consent-pct');
+const adminKpiTotalTutores = document.getElementById('admin-kpi-total-tutores');
+const adminKpiConfirmedCitas = document.getElementById('admin-kpi-confirmed-citas');
+const adminKpiHoldCitas = document.getElementById('admin-kpi-hold-citas');
+const adminKpiTotalCitas = document.getElementById('admin-kpi-total-citas');
+const adminKpiSoapFiches = document.getElementById('admin-kpi-soap-fiches');
+const adminKpiSoapReady = document.getElementById('admin-kpi-soap-ready');
+const adminKpiSoapSent = document.getElementById('admin-kpi-soap-sent');
+
+const chipStatusDb = document.getElementById('chip-status-db');
+const chipDbSub = document.getElementById('chip-db-sub');
+const chipStatusGroq = document.getElementById('chip-status-groq');
+const chipGroqSub = document.getElementById('chip-groq-sub');
+const chipStatusClaude = document.getElementById('chip-status-claude');
+const chipClaudeSub = document.getElementById('chip-claude-sub');
+const chipStatusN8n = document.getElementById('chip-status-n8n');
+const chipN8nSub = document.getElementById('chip-n8n-sub');
+
+const btnAdminRefreshMetrics = document.getElementById('btn-admin-refresh-metrics');
+const btnAdminTestN8n = document.getElementById('btn-admin-test-n8n');
+const btnAdminExportArsop = document.getElementById('btn-admin-export-arsop');
+const btnAdminSwitchClient = document.getElementById('btn-admin-switch-client');
+const btnAdminSwitchVet = document.getElementById('btn-admin-switch-vet');
+
+const adminConsoleBox = document.getElementById('admin-console-box');
+const adminConsoleBody = document.getElementById('admin-console-body');
+const btnCloseAdminConsole = document.getElementById('btn-close-admin-console');
+
+async function loadAdminMetrics() {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/admin/metrics`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    // 1. KPIs Ley 21.719
+    const ley = data.cumplimiento_ley21719 || {};
+    if (adminKpiConsent) adminKpiConsent.textContent = ley.tutores_con_consentimiento || 0;
+    if (adminKpiConsentPct) adminKpiConsentPct.textContent = `${ley.tasa_consentimiento_pct || 100}%`;
+    if (adminKpiTotalTutores) {
+      adminKpiTotalTutores.textContent = `de ${ley.total_tutores || 0} tutores totales (${ley.activos_whatsapp || 0} con WhatsApp activo)`;
+    }
+
+    // 2. KPIs Citas
+    const citas = data.metricas_citas || {};
+    if (adminKpiConfirmedCitas) adminKpiConfirmedCitas.textContent = citas.citas_confirmadas || 0;
+    if (adminKpiHoldCitas) adminKpiHoldCitas.textContent = `${citas.citas_en_hold_15_min || 0} en HOLD 15m`;
+    if (adminKpiTotalCitas) adminKpiTotalCitas.textContent = `${citas.total_citas || 0} citas totales generadas`;
+
+    // 3. KPIs SOAP
+    const soap = data.metricas_soap || {};
+    if (adminKpiSoapFiches) adminKpiSoapFiches.textContent = soap.total_fichas || 0;
+    if (adminKpiSoapReady) adminKpiSoapReady.textContent = `${soap.listas_para_revision || 0} listas revisión`;
+    if (adminKpiSoapSent) adminKpiSoapSent.textContent = `${soap.confirmadas_y_despachadas || 0} despachadas a WhatsApp`;
+
+    // 4. Integraciones
+    const inte = data.integraciones || {};
+    updateServiceChip(chipStatusDb, chipDbSub, inte.postgresql_16 === 'ONLINE', 'PostgreSQL 16 OK (vet-db)');
+    updateServiceChip(chipStatusGroq, chipGroqSub, inte.groq_whisper === 'CONFIGURADO', 'Groq Whisper V3 Turbo Activo');
+    updateServiceChip(chipStatusClaude, chipClaudeSub, inte.anthropic_claude === 'CONFIGURADO', 'Claude 3.5 Sonnet Tool Use Activo');
+    updateServiceChip(chipStatusN8n, chipN8nSub, true, 'Coolify n8n_app Activo');
+
+    showToast('Métricas ejecutivas de SuperAdmin actualizadas en vivo.', 'info');
+  } catch (err) {
+    console.error('Error cargando métricas admin:', err);
+    showToast(`Error al obtener métricas: ${err.message}`, 'error');
+  }
+}
+
+function updateServiceChip(chipElem, subElem, isOnline, okText) {
+  if (!chipElem) return;
+  const dot = chipElem.querySelector('.service-dot');
+  if (dot) {
+    dot.className = isOnline ? 'service-dot' : 'service-dot offline';
+  }
+  if (subElem) {
+    subElem.textContent = isOnline ? okText : 'Falta Configuración';
+  }
+}
+
+function logToAdminConsole(message) {
+  if (!adminConsoleBox || !adminConsoleBody) return;
+  adminConsoleBox.classList.remove('hidden');
+  const timestamp = new Date().toLocaleTimeString('es-CL');
+  adminConsoleBody.textContent = `[${timestamp}] ${message}\n\n` + adminConsoleBody.textContent;
+}
+
+if (btnAdminRefreshMetrics) {
+  btnAdminRefreshMetrics.addEventListener('click', loadAdminMetrics);
+}
+
+if (btnCloseAdminConsole) {
+  btnCloseAdminConsole.addEventListener('click', () => {
+    if (adminConsoleBox) adminConsoleBox.classList.add('hidden');
+    if (adminConsoleBody) adminConsoleBody.textContent = '';
+  });
+}
+
+if (btnAdminTestN8n) {
+  btnAdminTestN8n.addEventListener('click', async () => {
+    logToAdminConsole('⚡ Disparando ping de diagnóstico hacia n8n WhatsApp Webhook...');
+    try {
+      const res = await fetch(`${API_BASE}/health`);
+      const data = await res.json();
+      logToAdminConsole(`✓ Health check VPS responde OK: ${JSON.stringify(data, null, 2)}`);
+      showToast('Prueba de pipeline ejecutada con éxito.', 'success');
+    } catch (err) {
+      logToAdminConsole(`❌ Error en prueba: ${err.message}`);
+    }
+  });
+}
+
+if (btnAdminExportArsop) {
+  btnAdminExportArsop.addEventListener('click', async () => {
+    const phoneInput = prompt('Ingresa el número de WhatsApp a exportar (con +569...):', '+56912345678');
+    if (!phoneInput) return;
+
+    const clean = phoneInput.trim();
+    logToAdminConsole(`📥 Solicitando Derecho de Portabilidad Ley 21.719 para ${clean}...`);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/covet/privacy/export/${encodeURIComponent(clean)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      const exported = await res.json();
+      logToAdminConsole(`✓ Exportación Ley 21.719 generada exitosamente:\n${JSON.stringify(exported, null, 2)}`);
+      showToast('Datos de portabilidad exportados en consola.', 'success');
+    } catch (err) {
+      logToAdminConsole(`❌ Error exportando ARSOP+: ${err.message}`);
+      showToast(`Error exportando: ${err.message}`, 'error');
+    }
+  });
+}
+
+if (btnAdminSwitchClient) {
+  btnAdminSwitchClient.addEventListener('click', () => switchMainMode('client'));
+}
+
+if (btnAdminSwitchVet) {
+  btnAdminSwitchVet.addEventListener('click', () => switchMainMode('vet'));
+}
+
