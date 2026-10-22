@@ -50,6 +50,9 @@ class TutorDB(Base):
     fecha_consentimiento = Column(DateTime, nullable=True)
     version_terminos = Column(String(20), default="v1.0-2026")
     activo_whatsapp = Column(Boolean, default=True)
+    direccion = Column(Text, nullable=True)
+    metodo_captura = Column(String(50), default="FORMULARIO_WEB_TRIAJE")
+    actualizado_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     pacientes = relationship("PacienteDB", back_populates="tutor")
     fiches = relationship("MedicalFicheDB", back_populates="tutor")
@@ -116,6 +119,16 @@ class MedicalFicheDB(Base):
     paciente = relationship("PacienteDB", back_populates="fiches")
     cita = relationship("CitaDB", back_populates="fiches")
 
+class AuditoriaArcoDB(Base):
+    """Tabla aislada de auditoría ARCO para defensa legal con HMAC conforme a Ley 21.719"""
+    __tablename__ = "auditoria_arco"
+    auditoria_id = Column(PG_UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tutor_id_referencia = Column(Integer, nullable=True)
+    ticket_baja = Column(String(50), unique=True, nullable=False)
+    telefono_hmac = Column(Text, nullable=False)
+    accion_ejecutada = Column(String(50), default="SUPRESION_ANONIMIZACION")
+    fecha_creacion = Column(DateTime, default=datetime.datetime.utcnow)
+
 def run_safe_migrations(engine_instance):
     """
     Ejecuta migraciones idempotentes sobre tablas existentes (citas, pacientes)
@@ -148,11 +161,88 @@ def run_safe_migrations(engine_instance):
             conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_estado VARCHAR(30) DEFAULT 'PENDING';"))
             conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(30);"))
 
-            # 3. Tutores: Trazabilidad y Consentimiento Ley 21.719 (Protección de Datos Personales Chile)
+            # 3. Tutores y Auditoría ARCO (Ley 21.719 Protección de Datos Personales Chile)
+            conn.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
+            conn.execute(text("ALTER TABLE tutores ALTER COLUMN telefono DROP NOT NULL;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS direccion TEXT;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS consentimiento BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS version_politica VARCHAR(20) DEFAULT 'v1.0-2026';"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS metodo_captura VARCHAR(50) DEFAULT 'FORMULARIO_WEB_TRIAJE';"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS actualizado_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS consentimiento_ley21719 BOOLEAN DEFAULT FALSE;"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS fecha_consentimiento TIMESTAMP;"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS version_terminos VARCHAR(20) DEFAULT 'v1.0-2026';"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS activo_whatsapp BOOLEAN DEFAULT TRUE;"))
+
+            # Tabla aislada de auditoría ARCO (Defensa legal con HMAC)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS auditoria_arco (
+                    auditoria_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    tutor_id_referencia INT,
+                    ticket_baja VARCHAR(50) UNIQUE NOT NULL,
+                    telefono_hmac TEXT NOT NULL,
+                    accion_ejecutada VARCHAR(50) DEFAULT 'SUPRESION_ANONIMIZACION',
+                    fecha_creacion TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+
+            # Función segura para anonimizar tutor y generar registro de auditoría
+            conn.execute(text("""
+                CREATE OR REPLACE FUNCTION anonimizar_tutor(p_telefono TEXT, p_secret_pepper TEXT)
+                RETURNS TEXT AS $$
+                DECLARE
+                    v_tutor_id INT;
+                    v_ticket TEXT;
+                    v_hmac TEXT;
+                BEGIN
+                    SELECT id INTO v_tutor_id 
+                    FROM tutores 
+                    WHERE telefono = p_telefono;
+
+                    IF v_tutor_id IS NULL THEN
+                        RETURN 'TUTOR_NO_ENCONTRADO';
+                    END IF;
+
+                    v_ticket := 'BAJA-' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 for 8));
+                    v_hmac := ENCODE(HMAC(p_telefono::BYTEA, p_secret_pepper::BYTEA, 'sha256'), 'hex');
+
+                    INSERT INTO auditoria_arco (tutor_id_referencia, ticket_baja, telefono_hmac, accion_ejecutada)
+                    VALUES (v_tutor_id, v_ticket, v_hmac, 'SUPRESION_ANONIMIZACION');
+
+                    UPDATE tutores
+                    SET nombre = 'ANONIMIZADO',
+                        telefono = NULL,
+                        email = NULL,
+                        direccion = NULL,
+                        consentimiento = FALSE,
+                        consentimiento_ley21719 = FALSE,
+                        activo_whatsapp = FALSE,
+                        actualizado_at = CURRENT_TIMESTAMP
+                    WHERE id = v_tutor_id;
+
+                    RETURN v_ticket;
+                END;
+                $$ LANGUAGE plpgsql;
+            """))
+
+            # Función de retención y purga legal conforme a Ley 21.719 (Principio de Limitación del Plazo)
+            conn.execute(text("""
+                CREATE OR REPLACE FUNCTION purgar_auditoria_arco(p_anios INT DEFAULT 3)
+                RETURNS INT AS $$
+                DECLARE
+                    v_eliminados INT;
+                BEGIN
+                    DELETE FROM auditoria_arco 
+                    WHERE fecha_creacion < NOW() - (p_anios || ' years')::INTERVAL;
+                    
+                    GET DIAGNOSTICS v_eliminados = ROW_COUNT;
+                    RETURN v_eliminados;
+                END;
+                $$ LANGUAGE plpgsql;
+            """))
+
+            # Ejecutar purga automática preventiva de registros que superen el plazo de prescripción legal (3 años)
+            conn.execute(text("SELECT purgar_auditoria_arco(3);"))
 
             conn.commit()
         logger.info("Migración segura de esquema (run_safe_migrations) ejecutada exitosamente.")
@@ -1745,20 +1835,30 @@ def ejercer_derecho_supresion_oposicion(req: PrivacyOptOutRequest, db: Session =
     ahora = datetime.datetime.utcnow()
 
     if solicitud == "supresion":
-        # Anonimización disociada (irreversible para datos de contacto personales)
-        original_masked = mask_phone(tutor.telefono)
-        tutor.nombre = f"Tutor Anonimizado #{tutor.id}"
-        tutor.email = None
-        tutor.telefono = f"+569000000{tutor.id:04d}"
-        tutor.activo_whatsapp = False
-        tutor.consentimiento_ley21719 = False
-        tutor.version_terminos = "REVOCADO_ANON"
-        db.commit()
+        # Ejecución segura en PostgreSQL con cálculo de HMAC y registro inmutable en auditoria_arco
+        secret_pepper = os.getenv("SECRET_KEY", "covet-secret-pepper-2026")
+        try:
+            ticket = db.execute(
+                text("SELECT anonimizar_tutor(:tel, :pepper);"),
+                {"tel": clean_phone, "pepper": secret_pepper}
+            ).scalar()
+            db.commit()
+        except Exception as err:
+            logger.error(f"Error ejecutando anonimizar_tutor en DB: {err}")
+            tutor.nombre = "ANONIMIZADO"
+            tutor.telefono = None
+            tutor.email = None
+            tutor.direccion = None
+            tutor.consentimiento_ley21719 = False
+            tutor.activo_whatsapp = False
+            db.commit()
+            ticket = f"BAJA-{uuid.uuid4().hex[:8].upper()}"
 
-        logger.info(f"[Privacidad Ley 21.719] Supresión/Anonimización ejecutada para {original_masked}")
+        logger.info(f"[Privacidad Ley 21.719] Supresión/Anonimización ejecutada con HMAC para {mask_phone(clean_phone)}. Ticket: {ticket}")
         return {
             "status": "DATOS_ANONIMIZADOS",
-            "mensaje": "Tus datos personales identificables han sido suprimidos y disociados conforme a la Ley 21.719. Las estadísticas clínicas permanecen en forma anónima para trazabilidad epidemiológica veterinaria.",
+            "ticket_baja": ticket,
+            "mensaje": f"Tus datos personales han sido suprimidos y anonimizados conforme a la Ley 21.719. Se ha generado el comprobante legal de baja {ticket}.",
             "fecha": ahora.isoformat()
         }
     else:
@@ -1840,5 +1940,31 @@ def obtener_metricas_superadmin(db: Session = Depends(get_db)):
             "n8n_webhook": "CONFIGURADO" if bool(os.getenv("N8N_WEBHOOK_URL")) else "URL_DEFAULT_LOCAL"
         }
     }
+
+
+@app.post("/api/v1/covet/admin/privacy/purge-audit")
+def purgar_auditoria_legal(anios: int = 3, db: Session = Depends(get_db)):
+    """
+    Purga registros de auditoría ARCO que hayan superado el plazo legal de prescripción
+    (Ley 21.719 Art. 10 - Principio de Limitación de Conservación).
+    Default: 3 años.
+    """
+    try:
+        eliminados = db.execute(
+            text("SELECT purgar_auditoria_arco(:anios);"),
+            {"anios": anios}
+        ).scalar()
+        db.commit()
+        logger.info(f"[Ley 21.719 Purga] Se purgaron {eliminados} registros de auditoria_arco con antigüedad > {anios} años.")
+        return {
+            "status": "PURGA_COMPLETADA",
+            "registros_eliminados": eliminados or 0,
+            "criterio": f"fecha_creacion < NOW() - INTERVAL '{anios} years'",
+            "fecha_ejecucion": datetime.datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error al purgar auditoria_arco: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
