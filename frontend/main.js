@@ -1,4 +1,4 @@
-// CoVet Frontend — Núcleo Clínico SOAP con IA & Fidelización WhatsApp
+// CoVet Frontend — Núcleo Clínico SOAP, Triaje con IA & Fidelización WhatsApp
 // Monorepo Hetzner VPS + Vercel Edge
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://vet-api.142.132.233.38.sslip.io';
@@ -7,6 +7,9 @@ const API_BASE = import.meta.env.VITE_API_URL || 'https://vet-api.142.132.233.38
 // 1. ESTADO GLOBAL DE LA APLICACIÓN
 // ==========================================
 let currentTaskId = null;
+let activeTriageCitaId = null;
+let holdTimerInterval = null;
+let holdSecondsLeft = 15 * 60; // 15 minutos
 let mediaRecorder = null;
 let audioChunks = [];
 let recordingTimerInterval = null;
@@ -15,13 +18,341 @@ let pollingInterval = null;
 let currentMimeType = '';
 
 // ==========================================
-// 2. ELEMENTOS DEL DOM
+// 2. SWITCH DUAL DE VENTA & TEMA CLÍNICO
+// ==========================================
+const btnModeTutor = document.getElementById('btn-mode-tutor');
+const btnModeVet = document.getElementById('btn-mode-vet');
+const viewTutor = document.getElementById('view-tutor');
+const viewVet = document.getElementById('view-vet');
+const btnThemeToggle = document.getElementById('btn-theme-toggle');
+const themeToggleIcon = document.getElementById('theme-toggle-icon');
+
+// Configuración inicial de Tema (Clinical Light por defecto)
+const savedTheme = localStorage.getItem('covet-theme') || 'theme-light';
+document.body.className = savedTheme;
+updateThemeIcon(savedTheme);
+
+btnThemeToggle.addEventListener('click', () => {
+  const isLight = document.body.classList.contains('theme-light');
+  const newTheme = isLight ? 'theme-dark' : 'theme-light';
+  document.body.className = newTheme;
+  localStorage.setItem('covet-theme', newTheme);
+  updateThemeIcon(newTheme);
+});
+
+function updateThemeIcon(theme) {
+  themeToggleIcon.textContent = theme === 'theme-light' ? '🌙' : '☀️';
+}
+
+// Switch Dual (Cliente vs Veterinario)
+btnModeTutor.addEventListener('click', () => switchMainMode('tutor'));
+btnModeVet.addEventListener('click', () => switchMainMode('vet'));
+
+function switchMainMode(mode) {
+  if (mode === 'tutor') {
+    btnModeTutor.classList.add('active');
+    btnModeTutor.setAttribute('aria-selected', 'true');
+    btnModeVet.classList.remove('active');
+    btnModeVet.setAttribute('aria-selected', 'false');
+    viewTutor.classList.remove('hidden');
+    viewVet.classList.add('hidden');
+  } else {
+    btnModeVet.classList.add('active');
+    btnModeVet.setAttribute('aria-selected', 'true');
+    btnModeTutor.classList.remove('active');
+    btnModeTutor.setAttribute('aria-selected', 'false');
+    viewVet.classList.remove('hidden');
+    viewTutor.classList.add('hidden');
+    // Al entrar al modo veterinario, refrescar la agenda con los datos más recientes
+    loadAppointmentsData();
+  }
+}
+
+// ==========================================
+// 3. VISTA TUTOR / CLIENTE: TRIAJE & PRIMEROS AUXILIOS
+// ==========================================
+const tutorSymptomsInput = document.getElementById('tutor-symptoms-input');
+const btnVoiceIntent = document.getElementById('btn-voice-intent');
+const voiceIntentLabel = document.getElementById('voice-intent-label');
+const symptomChips = document.querySelectorAll('.symptom-chip');
+const tutorTriageForm = document.getElementById('tutor-triage-form');
+const tutorPetName = document.getElementById('tutor-pet-name');
+const tutorSpecies = document.getElementById('tutor-species');
+const tutorPhone = document.getElementById('tutor-phone');
+const tutorName = document.getElementById('tutor-name');
+const tutorServicePref = document.getElementById('tutor-service-pref');
+
+const tutorIntakeCard = document.getElementById('tutor-intake-card');
+const tutorTriageLoading = document.getElementById('tutor-triage-loading');
+const tutorTriageResult = document.getElementById('tutor-triage-result');
+
+const triageStatusBanner = document.getElementById('triage-status-banner');
+const triageLevelBadge = document.getElementById('triage-level-badge');
+const triageDiagTitle = document.getElementById('triage-diag-title');
+const triageServiceRecommendation = document.getElementById('triage-service-recommendation');
+const triageFirstAidBody = document.getElementById('triage-first-aid-body');
+
+const holdTimerText = document.getElementById('hold-timer-text');
+const holdPetName = document.getElementById('hold-pet-name');
+const holdModality = document.getElementById('hold-modality');
+const holdTimeSlot = document.getElementById('hold-time-slot');
+const holdPrice = document.getElementById('hold-price');
+const btnConfirmPayment = document.getElementById('btn-confirm-payment');
+const btnPayLabel = document.getElementById('btn-pay-label');
+
+const btnSlotAssigned = document.getElementById('btn-slot-assigned');
+const btnSlotMorning = document.getElementById('btn-slot-morning');
+const btnSlotAfternoon = document.getElementById('btn-slot-afternoon');
+
+const modalPaymentSuccess = document.getElementById('modal-payment-success');
+const btnModalSwitchToVet = document.getElementById('btn-modal-switch-to-vet');
+const btnModalResetTriage = document.getElementById('btn-modal-reset-triage');
+
+// Chips de Síntomas Frecuentes
+symptomChips.forEach(chip => {
+  chip.addEventListener('click', () => {
+    tutorSymptomsInput.value = chip.getAttribute('data-text');
+    tutorSymptomsInput.focus();
+  });
+});
+
+// Grabación de voz rápida para síntomas del tutor (Web Speech API o MediaRecorder)
+let isIntentRecording = false;
+let intentSpeechRec = null;
+
+if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  intentSpeechRec = new SpeechRec();
+  intentSpeechRec.lang = 'es-CL';
+  intentSpeechRec.continuous = false;
+  intentSpeechRec.interimResults = false;
+
+  intentSpeechRec.onresult = (e) => {
+    const transcript = e.results[0][0].transcript;
+    tutorSymptomsInput.value = (tutorSymptomsInput.value ? tutorSymptomsInput.value + ' ' : '') + transcript;
+  };
+
+  intentSpeechRec.onend = () => {
+    isIntentRecording = false;
+    btnVoiceIntent.classList.remove('recording');
+    voiceIntentLabel.textContent = 'Hablar';
+  };
+
+  intentSpeechRec.onerror = () => {
+    isIntentRecording = false;
+    btnVoiceIntent.classList.remove('recording');
+    voiceIntentLabel.textContent = 'Hablar';
+  };
+}
+
+btnVoiceIntent.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!intentSpeechRec) {
+    showToast('Dictado por voz directo no disponible en este navegador. Escribe en el cuadro de texto.', 'info');
+    return;
+  }
+
+  if (!isIntentRecording) {
+    try {
+      intentSpeechRec.start();
+      isIntentRecording = true;
+      btnVoiceIntent.classList.add('recording');
+      voiceIntentLabel.textContent = 'Escuchando...';
+    } catch (err) {
+      console.warn('Error iniciando SpeechRecognition:', err);
+    }
+  } else {
+    intentSpeechRec.stop();
+  }
+});
+
+// Envío del Formulario de Triaje
+tutorTriageForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const sintomas = tutorSymptomsInput.value.trim();
+  if (!sintomas) {
+    showToast('Por favor describe los síntomas de tu mascota para evaluar el triaje.', 'error');
+    tutorSymptomsInput.focus();
+    return;
+  }
+
+  // Normalización WhatsApp (+569...)
+  let rawPhone = tutorPhone.value.trim().replace(/\s+/g, '');
+  if (/^9\d{8}$/.test(rawPhone)) rawPhone = `+56${rawPhone}`;
+  else if (/^569\d{8}$/.test(rawPhone)) rawPhone = `+${rawPhone}`;
+
+  const triagePayload = {
+    tutor_nombre: tutorName.value.trim(),
+    tutor_telefono: rawPhone,
+    paciente_nombre: tutorPetName.value.trim(),
+    especie: tutorSpecies.value,
+    sintomas_o_motivo: sintomas,
+    preferencia_atencion: tutorServicePref.value,
+    preferencia_horario: 'LO_ANTES_POSIBLE'
+  };
+
+  // Mostrar Loading
+  tutorIntakeCard.classList.add('hidden');
+  tutorTriageLoading.classList.remove('hidden');
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/triage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(triagePayload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `Error HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    activeTriageCitaId = data.cita_id;
+
+    // Renderizar Resultados
+    renderTriageResult(data);
+    tutorTriageLoading.classList.add('hidden');
+    tutorTriageResult.classList.remove('hidden');
+
+  } catch (err) {
+    console.error('Error al evaluar triaje:', err);
+    showToast(`Error al evaluar triaje: ${err.message}`, 'error');
+    tutorTriageLoading.classList.add('hidden');
+    tutorIntakeCard.classList.remove('hidden');
+  }
+});
+
+function renderTriageResult(data) {
+  // 1. Semáforo
+  triageStatusBanner.className = 'triage-status-banner';
+  if (data.triaje_nivel_color === 'ROJO') {
+    triageStatusBanner.classList.add('red');
+    triageLevelBadge.textContent = '🚨 URGENCIA CRÍTICA (RIESGO VITAL)';
+  } else if (data.triaje_nivel_color === 'AMARILLO') {
+    triageStatusBanner.classList.add('yellow');
+    triageLevelBadge.textContent = '⚠️ ALTA PRIORIDAD CLÍNICA';
+  } else {
+    triageStatusBanner.classList.add('green');
+    triageLevelBadge.textContent = '✅ PREVENTIVO / CONTROL DE RUTINA';
+  }
+
+  triageDiagTitle.textContent = data.triaje_diagnostico_tentativo;
+  triageServiceRecommendation.textContent = `Modalidad recomendada: ${data.tipo_atencion_recomendada} (Atención sugerida en menos de 2 horas)`;
+
+  // 2. Primeros Auxilios
+  triageFirstAidBody.textContent = data.protocolo_primeros_auxilios;
+
+  // 3. Reserva y Datos del Bloque
+  holdPetName.textContent = tutorPetName.value || 'Tu mascota';
+  holdModality.textContent = data.tipo_atencion_recomendada;
+
+  const dateObj = new Date(data.bloque_asignado);
+  holdTimeSlot.textContent = dateObj.toLocaleString('es-CL', {
+    weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+  });
+
+  const formattedPrice = Number(data.monto_sugerido || 15000).toLocaleString('es-CL');
+  holdPrice.textContent = `$${formattedPrice} CLP`;
+  btnPayLabel.textContent = `Pagar y Confirmar Cupo ($${formattedPrice} CLP)`;
+
+  // Iniciar temporizador de 15 minutos
+  startHoldCountdown();
+}
+
+function startHoldCountdown() {
+  clearInterval(holdTimerInterval);
+  holdSecondsLeft = 15 * 60;
+  updateHoldTimerUI();
+
+  holdTimerInterval = setInterval(() => {
+    holdSecondsLeft--;
+    if (holdSecondsLeft <= 0) {
+      clearInterval(holdTimerInterval);
+      holdTimerText.textContent = '00:00 (Expirado)';
+      btnConfirmPayment.disabled = true;
+      btnPayLabel.textContent = 'Cupo Expirado — Solicita Nuevo Triaje';
+      return;
+    }
+    updateHoldTimerUI();
+  }, 1000);
+}
+
+function updateHoldTimerUI() {
+  const m = Math.floor(holdSecondsLeft / 60).toString().padStart(2, '0');
+  const s = (holdSecondsLeft % 60).toString().padStart(2, '0');
+  holdTimerText.textContent = `${m}:${s}`;
+}
+
+// Opciones Híbridas de Bloque
+[btnSlotAssigned, btnSlotMorning, btnSlotAfternoon].forEach(btn => {
+  btn.addEventListener('click', () => {
+    [btnSlotAssigned, btnSlotMorning, btnSlotAfternoon].forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (btn === btnSlotMorning) {
+      holdTimeSlot.textContent = 'Mañana (Ventana 10:00 - 13:00 hrs)';
+    } else if (btn === btnSlotAfternoon) {
+      holdTimeSlot.textContent = 'Tarde (Ventana 15:00 - 19:00 hrs)';
+    }
+  });
+});
+
+// Botón de Pago / Confirmación 1-Clic
+btnConfirmPayment.addEventListener('click', async () => {
+  if (!activeTriageCitaId) return;
+
+  btnConfirmPayment.disabled = true;
+  btnConfirmPayment.innerHTML = `<span class="spinner" style="width:16px;height:16px;margin:0;display:inline-block;vertical-align:middle;"></span> Procesando confirmación...`;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/appointments/${activeTriageCitaId}/confirm-payment`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        metodo_pago: 'DEMO_SIMULATION',
+        monto: 15000.0
+      })
+    });
+
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    clearInterval(holdTimerInterval);
+    modalPaymentSuccess.classList.remove('hidden');
+
+  } catch (err) {
+    console.error('Error al confirmar pago:', err);
+    showToast(`Error al confirmar cita: ${err.message}`, 'error');
+  } finally {
+    btnConfirmPayment.disabled = false;
+    btnConfirmPayment.innerHTML = `<span class="pay-icon">💳</span> <span id="btn-pay-label">Pagar y Confirmar Cupo</span>`;
+  }
+});
+
+// Acciones del Modal de Pago
+btnModalSwitchToVet.addEventListener('click', () => {
+  modalPaymentSuccess.classList.add('hidden');
+  switchMainMode('vet');
+  document.getElementById('tab-btn-agenda').click();
+  showToast('¡Observa cómo la cita triada ya está en la agenda en tiempo real!', 'success');
+});
+
+btnModalResetTriage.addEventListener('click', () => {
+  modalPaymentSuccess.classList.add('hidden');
+  tutorTriageResult.classList.add('hidden');
+  tutorIntakeCard.classList.remove('hidden');
+  tutorSymptomsInput.value = '';
+});
+
+
+// ==========================================
+// 4. MODO VETERINARIO (PANEL CLÍNICO COMPLETO)
 // ==========================================
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.getElementById('backend-status-text');
 const dbStatusText = document.getElementById('db-status-text');
 
-// Tabs
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabPanes = document.querySelectorAll('.tab-pane');
 const tabCitasCounter = document.getElementById('tab-citas-counter');
@@ -32,16 +363,12 @@ const stateRecording = document.getElementById('state-recording');
 const stateProcessing = document.getElementById('state-processing');
 const stateReview = document.getElementById('state-review');
 
-// Estado 1 (Idle)
 const selectCitaContexto = document.getElementById('select-cita-contexto');
 const btnStartRecord = document.getElementById('btn-start-record');
-
-// Estado 2 (Recording)
 const recordingTimer = document.getElementById('recording-timer');
 const btnStopRecord = document.getElementById('btn-stop-record');
 const btnCancelRecord = document.getElementById('btn-cancel-record');
 
-// Estado 3 (Processing)
 const processingStepTitle = document.getElementById('processing-step-title');
 const processingStepDesc = document.getElementById('processing-step-desc');
 const processingBarFill = document.getElementById('processing-bar-fill');
@@ -49,13 +376,11 @@ const processingErrorBanner = document.getElementById('processing-error-banner')
 const processingErrorMessage = document.getElementById('processing-error-message');
 const btnRetryRecord = document.getElementById('btn-retry-record');
 
-// Pasos checklist
 const stepUpload = document.getElementById('step-upload');
 const stepWhisper = document.getElementById('step-whisper');
 const stepClaude = document.getElementById('step-claude');
 const stepReady = document.getElementById('step-ready');
 
-// Estado 4 (Review SOAP)
 const formSoapReview = document.getElementById('form-soap-review');
 const soapFicheIdInput = document.getElementById('soap-fiche-id');
 const reviewTutorNombre = document.getElementById('review-tutor-nombre');
@@ -74,15 +399,7 @@ const reviewTranscriptRaw = document.getElementById('review-transcript-raw');
 const btnConfirmSoap = document.getElementById('btn-confirm-soap');
 const btnDiscardReview = document.getElementById('btn-discard-review');
 
-// Modal Éxito
-const modalSuccess = document.getElementById('modal-success');
-const modalSuccessSummary = document.getElementById('modal-success-summary');
-const n8nBadgeIndicator = document.getElementById('n8n-badge-indicator');
-const n8nStatusText = document.getElementById('n8n-status-text');
-const btnModalNewSoap = document.getElementById('btn-modal-new-soap');
-const btnModalViewAgenda = document.getElementById('btn-modal-view-agenda');
-
-// Tab Agenda (Preservada)
+// Tab Agenda
 const kpiCitas = document.getElementById('kpi-citas-count');
 const kpiPacientes = document.getElementById('kpi-pacientes-count');
 const kpiTutores = document.getElementById('kpi-tutores-count');
@@ -95,16 +412,12 @@ const btnRefresh = document.getElementById('btn-refresh');
 const fichesHistoryList = document.getElementById('fiches-history-list');
 const btnRefreshFiches = document.getElementById('btn-refresh-fiches');
 
-// Toast Container
 const toastContainer = document.getElementById('toast-container');
 
-// ==========================================
-// 3. NAVEGACIÓN ENTRE TABS
-// ==========================================
+// Tabs en Vet Mode
 tabBtns.forEach(btn => {
   btn.addEventListener('click', () => {
     const targetTab = btn.getAttribute('data-tab');
-
     tabBtns.forEach(b => {
       b.classList.remove('active');
       b.setAttribute('aria-selected', 'false');
@@ -116,39 +429,27 @@ tabBtns.forEach(btn => {
     const activePane = document.getElementById(targetTab);
     if (activePane) activePane.classList.remove('hidden');
 
-    if (targetTab === 'tab-agenda') {
-      loadAppointmentsData();
-    } else if (targetTab === 'tab-history') {
-      loadFichesHistory();
-    }
+    if (targetTab === 'tab-agenda') loadAppointmentsData();
+    else if (targetTab === 'tab-history') loadFichesHistory();
   });
 });
 
-// ==========================================
-// 4. TRANSICIONES DE ESTADO EN DICTADO
-// ==========================================
 function switchVibeState(stateName) {
   stateIdle.classList.add('hidden');
   stateRecording.classList.add('hidden');
   stateProcessing.classList.add('hidden');
   stateReview.classList.add('hidden');
 
-  if (stateName === 'idle') {
-    stateIdle.classList.remove('hidden');
-  } else if (stateName === 'recording') {
-    stateRecording.classList.remove('hidden');
-  } else if (stateName === 'processing') {
-    stateProcessing.classList.remove('hidden');
-  } else if (stateName === 'review') {
+  if (stateName === 'idle') stateIdle.classList.remove('hidden');
+  else if (stateName === 'recording') stateRecording.classList.remove('hidden');
+  else if (stateName === 'processing') stateProcessing.classList.remove('hidden');
+  else if (stateName === 'review') {
     stateReview.classList.remove('hidden');
-    // Auto-ajustar altura de textareas cargados
     document.querySelectorAll('.glass-textarea.auto-resize').forEach(autoResizeTextarea);
   }
 }
 
-// ==========================================
-// 5. CAPTURA DE AUDIO MULTIPLATAFORMA
-// ==========================================
+// Grabación de Audio con MediaRecorder API
 function detectSupportedMimeType() {
   const candidates = [
     'audio/webm;codecs=opus',
@@ -157,15 +458,9 @@ function detectSupportedMimeType() {
     'audio/aac',
     'audio/ogg;codecs=opus'
   ];
-
-  if (!window.MediaRecorder) {
-    return '';
-  }
-
+  if (!window.MediaRecorder) return '';
   for (const type of candidates) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      return type;
-    }
+    if (MediaRecorder.isTypeSupported(type)) return type;
   }
   return '';
 }
@@ -176,14 +471,8 @@ async function startRecording() {
       showToast('Tu navegador no soporta grabación de micrófono.', 'error');
       return;
     }
-
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        channelCount: 1,
-        sampleRate: 48000,
-        echoCancellation: true,
-        noiseSuppression: true
-      }
+      audio: { channelCount: 1, sampleRate: 48000, echoCancellation: true, noiseSuppression: true }
     });
 
     currentMimeType = detectSupportedMimeType();
@@ -192,35 +481,25 @@ async function startRecording() {
     try {
       mediaRecorder = new MediaRecorder(stream, options);
     } catch (e) {
-      console.warn('Fallback a MediaRecorder básico:', e);
       mediaRecorder = new MediaRecorder(stream);
       currentMimeType = mediaRecorder.mimeType || '';
     }
 
     audioChunks = [];
-
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data && event.data.size > 0) {
-        audioChunks.push(event.data);
-      }
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) audioChunks.push(e.data);
     };
-
     mediaRecorder.onstop = () => {
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach(t => t.stop());
     };
 
-    mediaRecorder.start(250); // Emitir chunks cada 250ms
+    mediaRecorder.start(250);
     startTimer();
     switchVibeState('recording');
     showToast('Grabando dictado clínico...', 'info');
 
   } catch (err) {
-    console.error('Error al solicitar micrófono:', err);
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showToast('Permiso de micrófono denegado. Habilítalo en los ajustes del navegador.', 'error');
-    } else {
-      showToast(`No se pudo iniciar la grabación: ${err.message}`, 'error');
-    }
+    showToast(`Error al activar micrófono: ${err.message}`, 'error');
   }
 }
 
@@ -228,15 +507,9 @@ function startTimer() {
   clearInterval(recordingTimerInterval);
   recordingSeconds = 0;
   updateTimerDisplay();
-
   recordingTimerInterval = setInterval(() => {
     recordingSeconds++;
     updateTimerDisplay();
-
-    // Notificación preventiva si llega a 90 segundos
-    if (recordingSeconds === 90) {
-      showToast('90s alcanzados (límite recomendado). Puedes detener y procesar.', 'info');
-    }
   }, 1000);
 }
 
@@ -245,33 +518,27 @@ function stopTimer() {
 }
 
 function updateTimerDisplay() {
-  const mins = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
-  const secs = (recordingSeconds % 60).toString().padStart(2, '0');
-  recordingTimer.textContent = `${mins}:${secs}`;
+  const m = Math.floor(recordingSeconds / 60).toString().padStart(2, '0');
+  const s = (recordingSeconds % 60).toString().padStart(2, '0');
+  recordingTimer.textContent = `${m}:${s}`;
 }
 
 function stopRecordingAndProcess() {
   if (!mediaRecorder || mediaRecorder.state === 'inactive') return;
-
   stopTimer();
 
   mediaRecorder.onstop = async () => {
     const finalMime = currentMimeType || 'audio/webm';
     const audioBlob = new Blob(audioChunks, { type: finalMime });
-
     if (audioBlob.size === 0) {
       showToast('El audio grabado está vacío.', 'error');
       switchVibeState('idle');
       return;
     }
-
-    // Determinar extensión adecuada
     const ext = finalMime.includes('mp4') ? 'mp4' : finalMime.includes('ogg') ? 'ogg' : 'webm';
     const audioFile = new File([audioBlob], `recording.${ext}`, { type: finalMime });
-
     uploadAudioAndPoll(audioFile);
   };
-
   mediaRecorder.stop();
 }
 
@@ -279,19 +546,15 @@ function cancelRecording() {
   if (mediaRecorder && mediaRecorder.state !== 'inactive') {
     mediaRecorder.onstop = null;
     mediaRecorder.stop();
-    if (mediaRecorder.stream) {
-      mediaRecorder.stream.getTracks().forEach(t => t.stop());
-    }
+    if (mediaRecorder.stream) mediaRecorder.stream.getTracks().forEach(t => t.stop());
   }
   stopTimer();
   audioChunks = [];
   switchVibeState('idle');
-  showToast('Grabación cancelada y descartada.', 'info');
+  showToast('Grabación cancelada.', 'info');
 }
 
-// ==========================================
-// 6. SUBIDA Y POLLING CON ESTADOS DINÁMICOS
-// ==========================================
+// Subida y Polling de Ficha SOAP
 async function uploadAudioAndPoll(audioFile) {
   switchVibeState('processing');
   resetProcessingUI();
@@ -299,35 +562,26 @@ async function uploadAudioAndPoll(audioFile) {
   try {
     const formData = new FormData();
     formData.append('file', audioFile);
-
-    const citaContexto = selectCitaContexto.value;
-    if (citaContexto) {
-      formData.append('cita_id', citaContexto);
+    if (selectCitaContexto.value) {
+      formData.append('cita_id', selectCitaContexto.value);
     }
 
-    setStepActive(stepUpload, 'Subiendo audio al servidor seguro Hetzner...', 25);
+    setStepActive(stepUpload, 'Subiendo audio al servidor Hetzner...', 25);
 
     const response = await fetch(`${API_BASE}/api/v1/covet/transcribe`, {
       method: 'POST',
       body: formData
     });
 
-    if (!response.ok) {
-      const errJson = await response.json().catch(() => ({}));
-      throw new Error(errJson.detail || `Error HTTP ${response.status} al subir audio`);
-    }
-
+    if (!response.ok) throw new Error(`HTTP ${response.status} en transcripción`);
     const data = await response.json();
     currentTaskId = data.task_id;
 
     setStepDone(stepUpload);
-    setStepActive(stepWhisper, 'Transcribiendo audio con Groq Whisper Large...', 50);
+    setStepActive(stepWhisper, 'Transcribiendo audio con Groq Whisper Large Turbo...', 50);
 
-    // Iniciar Polling cada 2 segundos
     startPolling(currentTaskId);
-
   } catch (err) {
-    console.error('Fallo en la subida:', err);
     showProcessingError(err.message);
   }
 }
@@ -340,9 +594,7 @@ function startPolling(taskId) {
     pollAttempts++;
     try {
       const res = await fetch(`${API_BASE}/api/v1/covet/fiches/${taskId}`);
-      if (!res.ok) {
-        throw new Error(`Error HTTP ${res.status} al consultar estado`);
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const fiche = await res.json();
       const status = fiche.estado_procesamiento;
@@ -358,24 +610,20 @@ function startPolling(taskId) {
         setStepDone(stepReady);
         processingBarFill.style.width = '100%';
         processingStepTitle.textContent = '¡Estructuración Completada!';
-        processingStepDesc.textContent = 'Cargando formulario de validación médica...';
 
         setTimeout(() => {
           populateReviewForm(fiche);
           switchVibeState('review');
         }, 700);
-
       } else if (status === 'FAILED') {
         clearInterval(pollingInterval);
-        showProcessingError(fiche.error_detalle || 'El procesamiento de la ficha falló en el servidor.');
+        showProcessingError(fiche.error_detalle || 'Error durante el procesamiento.');
       }
 
-      // Timeout preventivo tras 2 minutos (60 intentos)
       if (pollAttempts > 60) {
         clearInterval(pollingInterval);
-        showProcessingError('El procesamiento tomó más tiempo del esperado. Por favor reintenta.');
+        showProcessingError('Tiempo de espera agotado. Reintenta.');
       }
-
     } catch (err) {
       console.warn('Error en polling:', err);
     }
@@ -385,9 +633,7 @@ function startPolling(taskId) {
 function resetProcessingUI() {
   processingErrorBanner.classList.add('hidden');
   processingBarFill.style.width = '15%';
-  [stepUpload, stepWhisper, stepClaude, stepReady].forEach(step => {
-    step.className = 'step-item';
-  });
+  [stepUpload, stepWhisper, stepClaude, stepReady].forEach(s => s.className = 'step-item');
 }
 
 function setStepActive(stepElem, title, progressPercent) {
@@ -404,15 +650,10 @@ function showProcessingError(msg) {
   processingErrorBanner.classList.remove('hidden');
   processingErrorMessage.textContent = msg;
   processingStepTitle.textContent = 'Procesamiento Detenido';
-  processingStepDesc.textContent = 'Revisa el detalle a continuación para reintentar.';
 }
 
-// ==========================================
-// 7. FORMULARIO VIBE & VERIFY (ESTADO 4)
-// ==========================================
 function populateReviewForm(fiche) {
   const json = fiche.json_estructurado || {};
-
   soapFicheIdInput.value = fiche.id || '';
   reviewTutorNombre.value = json.tutor_nombre || 'Por definir';
   reviewTutorTelefono.value = json.tutor_telefono || '';
@@ -421,16 +662,13 @@ function populateReviewForm(fiche) {
   reviewRaza.value = json.raza || 'Mestizo';
   reviewEdad.value = json.edad_aproximada || '';
   reviewPeso.value = json.peso_kg !== null && json.peso_kg !== undefined ? json.peso_kg : '';
-
   reviewAnamnesis.value = json.anamnesis || '';
   reviewExamenFisico.value = json.examen_fisico || '';
   reviewDiagnostico.value = json.diagnostico_presuntivo || '';
   reviewPlanTerapeutico.value = json.plan_terapeutico || '';
   reviewProximosPasos.value = json.proximos_pasos || '';
-
   reviewTranscriptRaw.textContent = fiche.texto_transcrito_original || 'Sin transcripción literal.';
 
-  // Auto-ajustar alturas
   setTimeout(() => {
     document.querySelectorAll('.glass-textarea.auto-resize').forEach(autoResizeTextarea);
   }, 50);
@@ -446,30 +684,15 @@ document.querySelectorAll('.glass-textarea.auto-resize').forEach(ta => {
   ta.addEventListener('input', () => autoResizeTextarea(ta));
 });
 
-// Confirmación de Ficha (PUT)
+// Confirmación de Ficha SOAP (PUT)
 formSoapReview.addEventListener('submit', async (e) => {
   e.preventDefault();
-
   const ficheId = soapFicheIdInput.value;
-  if (!ficheId) {
-    showToast('Falta el ID de la ficha a confirmar.', 'error');
-    return;
-  }
+  if (!ficheId) return;
 
-  // Validación y normalización de WhatsApp
   let rawTel = reviewTutorTelefono.value.trim().replace(/\s+/g, '');
-  if (!rawTel) {
-    showToast('El teléfono del tutor es obligatorio para el envío por WhatsApp.', 'error');
-    reviewTutorTelefono.focus();
-    return;
-  }
-
-  // Normalizar formato +569XXXXXXXX
-  if (/^9\d{8}$/.test(rawTel)) {
-    rawTel = `+56${rawTel}`;
-  } else if (/^569\d{8}$/.test(rawTel)) {
-    rawTel = `+${rawTel}`;
-  }
+  if (/^9\d{8}$/.test(rawTel)) rawTel = `+56${rawTel}`;
+  else if (/^569\d{8}$/.test(rawTel)) rawTel = `+${rawTel}`;
 
   const payload = {
     tutor_nombre: reviewTutorNombre.value.trim(),
@@ -487,7 +710,7 @@ formSoapReview.addEventListener('submit', async (e) => {
   };
 
   btnConfirmSoap.disabled = true;
-  btnConfirmSoap.innerHTML = `<span class="spinner" style="width:16px;height:16px;margin:0;display:inline-block;vertical-align:middle;"></span> Guardando y notificando...`;
+  btnConfirmSoap.innerHTML = `<span class="spinner" style="width:16px;height:16px;margin:0;display:inline-block;vertical-align:middle;"></span> Guardando...`;
 
   try {
     const res = await fetch(`${API_BASE}/api/v1/covet/fiches/${ficheId}/confirm`, {
@@ -496,17 +719,12 @@ formSoapReview.addEventListener('submit', async (e) => {
       body: JSON.stringify(payload)
     });
 
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      throw new Error(errJson.detail || `Error HTTP ${res.status}`);
-    }
-
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const resData = await res.json();
-    showConfirmationSuccessModal(resData);
-    loadAppointmentsData(); // Refrescar citas y tutores
-
+    showToast('Ficha clínica confirmada y sincronizada en PostgreSQL.', 'success');
+    switchVibeState('idle');
+    loadAppointmentsData();
   } catch (err) {
-    console.error('Error al confirmar ficha:', err);
     showToast(`Error al confirmar: ${err.message}`, 'error');
   } finally {
     btnConfirmSoap.disabled = false;
@@ -514,53 +732,18 @@ formSoapReview.addEventListener('submit', async (e) => {
   }
 });
 
-function showConfirmationSuccessModal(data) {
-  modalSuccess.classList.remove('hidden');
-
-  const tutorName = reviewTutorNombre.value || 'Tutor';
-  const petName = reviewPacienteNombre.value || 'Paciente';
-  modalSuccessSummary.textContent = `La ficha clínica de ${petName} (${tutorName}) ha sido sincronizada en PostgreSQL.`;
-
-  if (data.n8n_dispatched === true) {
-    n8nBadgeIndicator.className = 'n8n-badge success';
-    n8nBadgeIndicator.textContent = '✅ WhatsApp Despachado';
-    n8nStatusText.textContent = 'El webhook de n8n_app recibió la ficha y la receta médica para envío inmediato.';
-  } else {
-    n8nBadgeIndicator.className = 'n8n-badge pending';
-    n8nBadgeIndicator.textContent = '⚠️ Ficha en PostgreSQL (n8n Pendiente)';
-    n8nStatusText.textContent = data.detalle || 'La ficha quedó registrada en la base de datos. Se despachará cuando n8n esté activo.';
-  }
-}
-
-// Acciones del Modal
-btnModalNewSoap.addEventListener('click', () => {
-  modalSuccess.classList.add('hidden');
-  switchVibeState('idle');
-});
-
-btnModalViewAgenda.addEventListener('click', () => {
-  modalSuccess.classList.add('hidden');
-  switchVibeState('idle');
-  document.getElementById('tab-btn-agenda').click();
-});
-
 btnDiscardReview.addEventListener('click', () => {
-  if (confirm('¿Seguro que deseas descartar esta ficha y volver al inicio?')) {
-    switchVibeState('idle');
-  }
+  if (confirm('¿Descartar esta ficha y volver al inicio?')) switchVibeState('idle');
 });
 
-btnRetryRecord.addEventListener('click', () => {
-  switchVibeState('idle');
-});
+btnRetryRecord.addEventListener('click', () => switchVibeState('idle'));
 
-// Event listeners de botones de grabación
 btnStartRecord.addEventListener('click', startRecording);
 btnStopRecord.addEventListener('click', stopRecordingAndProcess);
 btnCancelRecord.addEventListener('click', cancelRecording);
 
 // ==========================================
-// 8. AGENDA & CITAS (TAB 2)
+// 5. AGENDA & CITAS (VISTA VETERINARIO)
 // ==========================================
 async function loadAppointmentsData() {
   try {
@@ -574,7 +757,6 @@ async function loadAppointmentsData() {
     const pacientes = pacientesRes && pacientesRes.ok ? await pacientesRes.json() : [];
     const tutores = tutoresRes && tutoresRes.ok ? await tutoresRes.json() : [];
 
-    // Actualizar Contadores
     kpiCitas.textContent = citas.length;
     kpiPacientes.textContent = pacientes.length;
     kpiTutores.textContent = tutores.length;
@@ -584,11 +766,6 @@ async function loadAppointmentsData() {
     populateAppointmentContextSelector(citas, pacientes);
   } catch (err) {
     console.error('Error cargando citas:', err);
-    appointmentsContainer.innerHTML = `
-      <div class="empty-state">
-        <p>No se pudieron cargar las citas. Verifica la conexión con Hetzner.</p>
-      </div>
-    `;
   }
 }
 
@@ -596,7 +773,7 @@ function renderAppointmentsList(citas, pacientes) {
   if (!citas || citas.length === 0) {
     appointmentsContainer.innerHTML = `
       <div class="empty-state">
-        <p>No hay citas programadas aún. Registra la primera o dicta una ficha en terreno.</p>
+        <p>No hay citas programadas aún.</p>
       </div>
     `;
     return;
@@ -612,15 +789,21 @@ function renderAppointmentsList(citas, pacientes) {
     });
     const emoji = paciente.especie === 'Felino' ? '🐱' : paciente.especie === 'Canino' ? '🐶' : '🐾';
 
+    const isHold = cita.estado_cita === 'HOLD_15_MIN';
+    const statusClass = isHold ? 'hold' : 'confirmed';
+    const statusText = isHold ? '⏳ HOLD 15 MIN' : (cita.pago_estado === 'SIMULATED_PAID' ? '✅ PAGADO & CONFIRMADO' : '✓ CONFIRMADA');
+    const modality = cita.tipo_atencion || 'CLINICA';
+
     return `
-      <div class="appointment-card">
+      <div class="appointment-card ${statusClass}">
         <div class="cita-pet">
           <span>${emoji}</span>
           <span>${escapeHtml(paciente.nombre)}</span>
-          <span class="cita-status-tag">Agendada</span>
+          <small style="color:var(--text-dim);font-weight:600;">[${modality}]</small>
+          <span class="cita-status-tag ${statusClass}">${statusText}</span>
         </div>
         <div class="cita-motivo">${escapeHtml(cita.motivo)}</div>
-        <div class="cita-time">📅 ${dateFormatted}</div>
+        <div class="cita-time">📅 ${dateFormatted} • Valor: $${Number(cita.monto_pago || 0).toLocaleString('es-CL')} CLP</div>
       </div>
     `;
   }).join('');
@@ -631,7 +814,6 @@ function populateAppointmentContextSelector(citas, pacientes) {
   pacientes.forEach(p => pacientesMap.set(p.id, p));
 
   selectCitaContexto.innerHTML = '<option value="">-- Consulta espontánea / Sin cita previa --</option>';
-
   citas.forEach(cita => {
     const paciente = pacientesMap.get(cita.paciente_id);
     const petName = paciente ? paciente.nombre : `Paciente #${cita.paciente_id}`;
@@ -643,15 +825,13 @@ function populateAppointmentContextSelector(citas, pacientes) {
   });
 }
 
-// Envío del formulario de agendamiento rápido manual
+// Agendamiento manual rápido en agenda
 if (appointmentForm) {
   appointmentForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     btnSubmitAppointment.disabled = true;
-    btnSubmitAppointment.innerHTML = '<span>Guardando en PostgreSQL...</span>';
 
     try {
-      // 1. Crear Tutor
       const tutorRes = await fetch(`${API_BASE}/api/tutores`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -664,7 +844,6 @@ if (appointmentForm) {
       if (!tutorRes.ok) throw new Error('Error al registrar tutor');
       const tutor = await tutorRes.json();
 
-      // 2. Crear Paciente
       const pacienteRes = await fetch(`${API_BASE}/api/pacientes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -673,33 +852,32 @@ if (appointmentForm) {
           nombre: document.getElementById('paciente-nombre').value.trim(),
           especie: document.getElementById('paciente-especie').value,
           raza: document.getElementById('paciente-raza').value.trim() || 'Mestizo',
-          peso_kg: parseFloat(document.getElementById('paciente-peso').value) || 10.0
+          peso_kg: 10.0
         })
       });
       if (!pacienteRes.ok) throw new Error('Error al registrar paciente');
       const paciente = await pacienteRes.json();
 
-      // 3. Crear Cita
       const citaRes = await fetch(`${API_BASE}/api/citas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paciente_id: paciente.id,
           fecha_hora: new Date(document.getElementById('cita-fecha').value).toISOString(),
-          motivo: document.getElementById('cita-motivo').value.trim()
+          motivo: document.getElementById('cita-motivo').value.trim(),
+          tipo_atencion: document.getElementById('cita-tipo-atencion').value,
+          ventana_horaria: 'HORA_EXACTA'
         })
       });
       if (!citaRes.ok) throw new Error('Error al agendar cita');
 
-      showToast('Cita guardada con éxito en PostgreSQL', 'success');
+      showToast('Cita guardada en PostgreSQL', 'success');
       appointmentForm.reset();
       loadAppointmentsData();
-
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
       btnSubmitAppointment.disabled = false;
-      btnSubmitAppointment.innerHTML = '<span>Guardar Cita en PostgreSQL</span>';
     }
   });
 }
@@ -707,17 +885,17 @@ if (appointmentForm) {
 btnRefresh.addEventListener('click', () => {
   loadAppointmentsData();
   checkHealth();
-  showToast('Datos de agenda actualizados', 'info');
+  showToast('Agenda sincronizada con PostgreSQL', 'info');
 });
 
 // ==========================================
-// 9. HISTORIAL DE FICHAS (TAB 3)
+// 6. HISTORIAL DE FICHAS (TAB 3)
 // ==========================================
 async function loadFichesHistory() {
   fichesHistoryList.innerHTML = `
     <div class="loading-state">
       <span class="spinner"></span>
-      <p>Consultando fichas clínicas en PostgreSQL...</p>
+      <p>Consultando fichas en PostgreSQL...</p>
     </div>
   `;
 
@@ -727,11 +905,7 @@ async function loadFichesHistory() {
     const fiches = await res.json();
 
     if (!fiches || fiches.length === 0) {
-      fichesHistoryList.innerHTML = `
-        <div class="empty-state">
-          <p>No hay fichas clínicas registradas aún. Toca en "Dictado SOAP" para crear la primera.</p>
-        </div>
-      `;
+      fichesHistoryList.innerHTML = `<div class="empty-state"><p>No hay fichas clínicas registradas aún.</p></div>`;
       return;
     }
 
@@ -739,31 +913,22 @@ async function loadFichesHistory() {
       const json = fiche.json_estructurado || {};
       const petName = json.paciente_nombre || 'Paciente';
       const tutorName = json.tutor_nombre || 'Tutor';
-      const especie = json.especie || 'Mascota';
       const diag = json.diagnostico_presuntivo || 'Sin diagnóstico registrado';
-      const emoji = especie === 'Felino' ? '🐱' : especie === 'Canino' ? '🐶' : '🐾';
-      
-      const createdDate = fiche.fecha_creacion 
-        ? new Date(fiche.fecha_creacion).toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
-        : 'Reciente';
+      const createdDate = fiche.fecha_creacion ? new Date(fiche.fecha_creacion).toLocaleString('es-CL') : 'Reciente';
 
-      let statusBadge = '<span class="cita-status-tag">PENDIENTE</span>';
+      let statusBadge = '<span class="cita-status-tag confirmed">✓ CONFIRMADA</span>';
       if (fiche.estado_procesamiento === 'CONFIRMED_AND_SENT') {
-        statusBadge = '<span class="cita-status-tag" style="background:rgba(16,185,129,0.2);color:#34d399;">✅ WhatsApp Enviado</span>';
+        statusBadge = '<span class="cita-status-tag confirmed">✅ WhatsApp Despachado</span>';
       } else if (fiche.estado_procesamiento === 'CONFIRMED_N8N_PENDING') {
-        statusBadge = '<span class="cita-status-tag" style="background:rgba(245,158,11,0.2);color:#fbbf24;">⚠️ n8n Pendiente</span>';
-      } else if (fiche.estado_procesamiento === 'READY_FOR_REVIEW') {
-        statusBadge = '<span class="cita-status-tag" style="background:rgba(56,189,248,0.2);color:#38bdf8;">📝 Listo Revisar</span>';
-      } else if (fiche.estado_procesamiento === 'FAILED') {
-        statusBadge = '<span class="cita-status-tag" style="background:rgba(244,63,94,0.2);color:#f43f5e;">❌ Fallido</span>';
+        statusBadge = '<span class="cita-status-tag hold">⚠️ n8n Pendiente</span>';
       }
 
       return `
         <div class="fiche-history-card">
           <div class="cita-pet">
-            <span>${emoji}</span>
+            <span>🐾</span>
             <span>${escapeHtml(petName)}</span>
-            <small style="color:var(--text-muted);font-weight:normal;">(${escapeHtml(tutorName)})</small>
+            <small style="color:var(--text-dim);">(${escapeHtml(tutorName)})</small>
             ${statusBadge}
           </div>
           <div class="cita-motivo"><strong>Dx:</strong> ${escapeHtml(diag)}</div>
@@ -771,22 +936,15 @@ async function loadFichesHistory() {
         </div>
       `;
     }).join('');
-
   } catch (err) {
-    fichesHistoryList.innerHTML = `
-      <div class="empty-state">
-        <p>No se pudo consultar el historial: ${escapeHtml(err.message)}</p>
-      </div>
-    `;
+    fichesHistoryList.innerHTML = `<div class="empty-state"><p>Error cargando fichas: ${err.message}</p></div>`;
   }
 }
 
-if (btnRefreshFiches) {
-  btnRefreshFiches.addEventListener('click', loadFichesHistory);
-}
+if (btnRefreshFiches) btnRefreshFiches.addEventListener('click', loadFichesHistory);
 
 // ==========================================
-// 10. HEALTH CHECK & MONITOR
+// 7. HEALTH CHECK & MONITOREO
 // ==========================================
 async function checkHealth() {
   try {
@@ -810,18 +968,13 @@ async function checkHealth() {
   }
 }
 
-// ==========================================
-// 11. UTILITARIOS & TOASTS
-// ==========================================
 function showToast(message, type = 'info') {
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
-
   toastContainer.appendChild(toast);
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateY(10px)';
     setTimeout(() => toast.remove(), 300);
   }, 4000);
 }
@@ -831,15 +984,6 @@ function escapeHtml(text) {
   return text.replace(/[&<>"']/g, m => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
   })[m]);
-}
-
-// Configurar fecha por defecto en formulario de citas (+1 día a las 10:00)
-const tomorrow = new Date();
-tomorrow.setDate(tomorrow.getDate() + 1);
-tomorrow.setHours(10, 0, 0, 0);
-const dateInput = document.getElementById('cita-fecha');
-if (dateInput) {
-  dateInput.value = tomorrow.toISOString().slice(0, 16);
 }
 
 // Inicialización

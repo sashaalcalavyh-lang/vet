@@ -67,6 +67,15 @@ class CitaDB(Base):
     fecha_hora = Column(DateTime, nullable=False)
     motivo = Column(String(200), nullable=False)
     confirmada = Column(Boolean, default=False)
+    tipo_atencion = Column(String(30), default="CLINICA_PRESENCIAL") # TELEMEDICINA, DOMICILIO, CLINICA_PRESENCIAL
+    estado_cita = Column(String(30), default="CONFIRMED") # HOLD_15_MIN, CONFIRMED, CANCELLED, COMPLETED
+    triaje_urgencia = Column(String(30), default="MEDIUM_ROUTINE") # CRITICAL_EMERGENCY, HIGH_PRIORITY, MEDIUM_ROUTINE, LOW_PREVENTIVE
+    protocolo_primeros_auxilios = Column(Text, nullable=True)
+    hold_expira_en = Column(DateTime, nullable=True)
+    monto_pago = Column(Float, default=0.0)
+    pago_estado = Column(String(30), default="PENDING") # PENDING, SIMULATED_PAID, PAID_GATEWAY
+    pago_metodo = Column(String(30), nullable=True)
+    ventana_horaria = Column(String(30), nullable=True) # MAÑANA, TARDE, HORA_EXACTA
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     paciente = relationship("PacienteDB", back_populates="citas")
     fiches = relationship("MedicalFicheDB", back_populates="cita")
@@ -91,7 +100,19 @@ class MedicalFicheDB(Base):
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
-        logger.info("Tablas de base de datos verificadas/creadas exitosamente.")
+        # Migraciones automáticas seguras sin afectar datos previos
+        with engine.connect() as conn:
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS tipo_atencion VARCHAR(30) DEFAULT 'CLINICA_PRESENCIAL'"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS estado_cita VARCHAR(30) DEFAULT 'CONFIRMED'"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS triaje_urgencia VARCHAR(30) DEFAULT 'MEDIUM_ROUTINE'"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS protocolo_primeros_auxilios TEXT"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS hold_expira_en TIMESTAMP"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS monto_pago FLOAT DEFAULT 0.0"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_estado VARCHAR(30) DEFAULT 'PENDING'"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS ventana_horaria VARCHAR(30)"))
+            conn.commit()
+        logger.info("Tablas y columnas de base de datos verificadas/creadas exitosamente.")
     except Exception as e:
         logger.error(f"Error al inicializar tablas: {e}")
 
@@ -126,13 +147,84 @@ class CitaCreate(BaseModel):
     paciente_id: int
     fecha_hora: datetime.datetime
     motivo: str = Field(..., example="Vacuna Óctuple y Desparasitación")
+    tipo_atencion: Optional[str] = "CLINICA_PRESENCIAL"
+    ventana_horaria: Optional[str] = "HORA_EXACTA"
 
-class CitaOut(CitaCreate):
+class CitaOut(BaseModel):
     id: int
+    paciente_id: int
+    fecha_hora: datetime.datetime
+    motivo: str
     confirmada: bool
+    tipo_atencion: Optional[str] = "CLINICA_PRESENCIAL"
+    estado_cita: Optional[str] = "CONFIRMED"
+    triaje_urgencia: Optional[str] = "MEDIUM_ROUTINE"
+    protocolo_primeros_auxilios: Optional[str] = None
+    hold_expira_en: Optional[datetime.datetime] = None
+    monto_pago: Optional[float] = 0.0
+    pago_estado: Optional[str] = "PENDING"
+    pago_metodo: Optional[str] = None
+    ventana_horaria: Optional[str] = None
     created_at: datetime.datetime
     class Config:
         from_attributes = True
+
+class TriageRequest(BaseModel):
+    tutor_nombre: str = Field(..., example="Camila Valenzuela")
+    tutor_telefono: str = Field(..., example="+56987654321")
+    paciente_nombre: str = Field(..., example="Milo")
+    especie: str = Field(default="Canino", example="Canino")
+    sintomas_o_motivo: str = Field(..., example="Mi perro vomitó espuma blanca y tiembla mucho hace 1 hora")
+    preferencia_atencion: Optional[str] = "CUALQUIERA" # TELEMEDICINA, DOMICILIO, CLINICA_PRESENCIAL, CUALQUIERA
+    preferencia_horario: Optional[str] = "LO_ANTES_POSIBLE" # LO_ANTES_POSIBLE, MAÑANA, TARDE
+
+class TriageEvaluationSchema(BaseModel):
+    triaje_urgencia: str = Field(
+        description="Nivel de urgencia clínica: CRITICAL_EMERGENCY, HIGH_PRIORITY, MEDIUM_ROUTINE o LOW_PREVENTIVE"
+    )
+    triaje_nivel_color: str = Field(
+        description="Código de semáforo: ROJO (crítico/inmediato), AMARILLO (alta prioridad en horas), VERDE (rutina/preventivo)"
+    )
+    triaje_diagnostico_tentativo: str = Field(
+        description="Hipótesis clínica tentativa en lenguaje empático y profesional veterinario"
+    )
+    protocolo_primeros_auxilios: str = Field(
+        description="Pasos de primeros auxilios y advertencias de qué NO hacer inmediatamente mientras se recibe atención médica"
+    )
+    tipo_atencion_recomendada: str = Field(
+        description="TELEMEDICINA (si requiere orientación inmediata), DOMICILIO o CLINICA_PRESENCIAL"
+    )
+    tiempo_maximo_espera_horas: float = Field(
+        description="Tiempo máximo seguro en horas para recibir evaluación"
+    )
+
+class TriageResponse(BaseModel):
+    cita_id: int
+    triaje_urgencia: str
+    triaje_nivel_color: str
+    triaje_diagnostico_tentativo: str
+    protocolo_primeros_auxilios: str
+    tipo_atencion_recomendada: str
+    bloque_asignado: datetime.datetime
+    hold_expira_en: datetime.datetime
+    monto_sugerido: float
+    bloques_alternativos: List[datetime.datetime]
+    estado_cita: str
+    tutor_id: int
+    paciente_id: int
+
+class PaymentConfirmRequest(BaseModel):
+    metodo_pago: str = Field(default="DEMO_SIMULATION", example="DEMO_SIMULATION") # MERCADOPAGO, FLOW, WEBPAY, DEMO_SIMULATION
+    monto: Optional[float] = 15000.0
+
+class PaymentConfirmResponse(BaseModel):
+    cita_id: int
+    estado_cita: str
+    pago_estado: str
+    pago_metodo: str
+    mensaje: str
+    n8n_dispatched: bool
+    resumen_cita: dict
 
 class SOAPFicheSchema(BaseModel):
     tutor_nombre: str = Field(
@@ -644,3 +736,308 @@ def crear_cita(cita: CitaCreate, db: Session = Depends(get_db)):
 @app.get("/api/citas", response_model=List[CitaOut])
 def listar_citas(db: Session = Depends(get_db)):
     return db.query(CitaDB).order_by(CitaDB.fecha_hora.asc()).all()
+
+# -------------------------------------------------------------
+# 7. Núcleo de Triaje Autónomo y Protocolos de Primeros Auxilios (IA)
+# -------------------------------------------------------------
+def evaluar_triaje_con_ia(sintomas: str, especie: str, paciente: str) -> dict:
+    """
+    Evalúa la urgencia médica usando Anthropic Claude con salida estructurada Tool Use.
+    Fallback determinístico basado en reglas clínicas chilenas si no hay API o hay timeout.
+    """
+    if ANTHROPIC_API_KEY:
+        try:
+            anthropic_payload = {
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": 1024,
+                "system": (
+                    "Actúas como un Médico Veterinario de Urgencias y Triaje Clínico en Chile (CoVet). "
+                    "Tu misión es evaluar los síntomas reportados por el tutor, categorizar el riesgo vital "
+                    "bajo el estándar de triaje veterinario (ROJO: Riesgo vital inminente / Shock / Disnea severa / Intoxicación aguda / Torsión gástrica / Obstrucción urinaria; "
+                    "AMARILLO: Vómitos repetidos / Sangrado / Fiebre / Cojera severa / Diarrea profusa; "
+                    "VERDE: Control preventivo, vacunas, decaimiento leve sin dolor agudo) "
+                    "y redactar un protocolo de primeros auxilios claro, seguro y pre-aprobado (indicando qué hacer y qué NO hacer antes de la consulta). "
+                    "Utiliza la herramienta registrar_evaluacion_triaje con la información exacta. "
+                    "NUNCA recetes fármacos específicos ni antibióticos; prioriza soporte vital, vía aérea, contención y confort térmico."
+                ),
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"Paciente: {paciente} (Especie: {especie}).\nSíntomas/Motivo reportado: \"{sintomas}\""
+                    }
+                ],
+                "tools": [
+                    {
+                        "name": "registrar_evaluacion_triaje",
+                        "description": "Registra el triaje veterinario y protocolo de primeros auxilios.",
+                        "input_schema": TriageEvaluationSchema.model_json_schema()
+                    }
+                ],
+                "tool_choice": {"type": "tool", "name": "registrar_evaluacion_triaje"}
+            }
+
+            with httpx.Client(timeout=15.0) as client:
+                res = client.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={
+                        "x-api-key": ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                        "content-type": "application/json"
+                    },
+                    json=anthropic_payload
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    for block in data.get("content", []):
+                        if block.get("type") == "tool_use" and block.get("name") == "registrar_evaluacion_triaje":
+                            return block.get("input", {})
+        except Exception as e:
+            logger.warning(f"Error evaluando triaje con Claude, aplicando fallback: {e}")
+
+    # Fallback Determinístico de Reglas Clínicas Chilenas
+    sintomas_lower = sintomas.lower()
+    critical_keywords = ["veneno", "raticida", "convuls", "no respira", "ahogo", "asfixia", "atropell", "cianosis", "morad", "hinchado", "torsion", "inconsciente"]
+    high_keywords = ["vomit", "diarrea", "sangre", "cojera", "ojo", "fiebre", "herida", "dolor", "quej"]
+
+    if any(k in sintomas_lower for k in critical_keywords):
+        return {
+            "triaje_urgencia": "CRITICAL_EMERGENCY",
+            "triaje_nivel_color": "ROJO",
+            "triaje_diagnostico_tentativo": "Alerta de Emergencia Vital Inmediata. Sospecha de intoxicación aguda, compromiso respiratorio o shock.",
+            "protocolo_primeros_auxilios": (
+                "1. Mantén la calma y mantén a la mascota abrigada y en reposo absoluto.\n"
+                "2. NO induzcas el vómito si sospechas sustancias cáusticas o si la mascota está desorientada.\n"
+                "3. Asegura que las vías respiratorias estén despejadas (estira suavemente su cuello).\n"
+                "4. Si hay sangrado externo activo, aplica presión firme con un paño limpio y seco.\n"
+                "5. Conéctate a Telemedicina de urgencia ahora mismo o acude a un centro 24h."
+            ),
+            "tipo_atencion_recomendada": "TELEMEDICINA",
+            "tiempo_maximo_espera_horas": 0.5
+        }
+    elif any(k in sintomas_lower for k in high_keywords):
+        return {
+            "triaje_urgencia": "HIGH_PRIORITY",
+            "triaje_nivel_color": "AMARILLO",
+            "triaje_diagnostico_tentativo": "Cuadro agudo de prioridad alta (gastroentérico, trauma o dolor agudo).",
+            "protocolo_primeros_auxilios": (
+                "1. Suspende comida sólida por 4 a 6 horas para evitar sobrecarga gástrica.\n"
+                "2. Ofrece pequeñas cantidades de agua fresca (a sorbos cada 15 min).\n"
+                "3. NUNCA administres fármacos humanos (Paracetamol e Ibuprofeno son letales para mascotas).\n"
+                "4. Observa el color de sus encías (deben ser rosadas, no blancas ni azuladas)."
+            ),
+            "tipo_atencion_recomendada": "DOMICILIO",
+            "tiempo_maximo_espera_horas": 4.0
+        }
+    else:
+        return {
+            "triaje_urgencia": "LOW_PREVENTIVE",
+            "triaje_nivel_color": "VERDE",
+            "triaje_diagnostico_tentativo": "Consulta de control, chequeo preventivo o síntoma leve sin compromiso vital.",
+            "protocolo_primeros_auxilios": (
+                "1. Mantén el registro de los síntomas observados y de su alimentación.\n"
+                "2. Ten a mano la cartilla sanitaria con sus vacunas al día.\n"
+                "3. Asegura que descanse en un espacio confortable hasta su atención."
+            ),
+            "tipo_atencion_recomendada": "CLINICA_PRESENCIAL",
+            "tiempo_maximo_espera_horas": 24.0
+        }
+
+@app.post("/api/v1/covet/triage", response_model=TriageResponse)
+def ejecutar_triaje_autonomo(req: TriageRequest, db: Session = Depends(get_db)):
+    """
+    Agente Autónomo de Triaje Clínico:
+    1. Sincroniza Tutor y Paciente en PostgreSQL.
+    2. Evalúa riesgo vital con IA y asigna protocolo de primeros auxilios.
+    3. Bloquea cupo temporal en agenda (HOLD_15_MIN).
+    4. Notifica asíncronamente a n8n para alerta WhatsApp al veterinario.
+    """
+    clean_phone = req.tutor_telefono.strip()
+    clean_tutor_name = req.tutor_nombre.strip()
+    clean_pet_name = req.paciente_nombre.strip()
+
+    # 1. Upsert Tutor
+    tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+    if not tutor:
+        tutor = TutorDB(nombre=clean_tutor_name, telefono=clean_phone)
+        db.add(tutor)
+        db.commit()
+        db.refresh(tutor)
+    else:
+        if tutor.nombre != clean_tutor_name:
+            tutor.nombre = clean_tutor_name
+            db.commit()
+
+    # 2. Upsert Paciente
+    paciente = db.query(PacienteDB).filter(
+        PacienteDB.tutor_id == tutor.id,
+        PacienteDB.nombre.ilike(clean_pet_name)
+    ).first()
+    if not paciente:
+        paciente = PacienteDB(
+            tutor_id=tutor.id,
+            nombre=clean_pet_name,
+            especie=req.especie,
+            raza="Mestizo",
+            peso_kg=10.0
+        )
+        db.add(paciente)
+        db.commit()
+        db.refresh(paciente)
+
+    # 3. Evaluación con IA
+    evaluacion = evaluar_triaje_con_ia(req.sintomas_o_motivo, req.especie, clean_pet_name)
+    nivel_urgencia = evaluacion.get("triaje_urgencia", "MEDIUM_ROUTINE")
+    nivel_color = evaluacion.get("triaje_nivel_color", "AMARILLO")
+    diag_tentativo = evaluacion.get("triaje_diagnostico_tentativo", "Evaluación clínica requerida")
+    primeros_auxilios = evaluacion.get("protocolo_primeros_auxilios", "Mantener en reposo")
+    tipo_atencion = req.preferencia_atencion if req.preferencia_atencion != "CUALQUIERA" else evaluacion.get("tipo_atencion_recomendada", "TELEMEDICINA")
+
+    # 4. Cálculo de Bloques de Agenda (Opción C Híbrida / Adaptable)
+    ahora = datetime.datetime.utcnow()
+    bloque_asignado = ahora + datetime.timedelta(minutes=10) # Telemedicina inmediata por defecto si es crítico
+
+    if nivel_urgencia == "CRITICAL_EMERGENCY":
+        bloque_asignado = ahora + datetime.timedelta(minutes=10)
+        tipo_atencion = "TELEMEDICINA"
+        monto_sugerido = 15000.0
+    elif nivel_urgencia == "HIGH_PRIORITY":
+        bloque_asignado = ahora + datetime.timedelta(hours=2)
+        monto_sugerido = 25000.0 if tipo_atencion == "DOMICILIO" else 18000.0
+    else:
+        # Rutina o Preventivo
+        monto_sugerido = 20000.0
+        # Próximo día hábil a las 10:00 o 15:30 según preferencia
+        mañana = ahora + datetime.timedelta(days=1)
+        if req.preferencia_horario == "TARDE":
+            bloque_asignado = mañana.replace(hour=16, minute=0, second=0, microsecond=0)
+        else:
+            bloque_asignado = mañana.replace(hour=10, minute=30, second=0, microsecond=0)
+
+    # Alternativas horarias sugeridas
+    bloques_alt = [
+        bloque_asignado + datetime.timedelta(hours=1),
+        bloque_asignado + datetime.timedelta(hours=3),
+        bloque_asignado + datetime.timedelta(days=1)
+    ]
+
+    hold_expira = ahora + datetime.timedelta(minutes=15)
+
+    # 5. Crear Cita en Estado HOLD_15_MIN
+    db_cita = CitaDB(
+        paciente_id=paciente.id,
+        fecha_hora=bloque_asignado,
+        motivo=f"[{nivel_color}] {req.sintomas_o_motivo[:150]}",
+        confirmada=False,
+        tipo_atencion=tipo_atencion,
+        estado_cita="HOLD_15_MIN",
+        triaje_urgencia=nivel_urgencia,
+        protocolo_primeros_auxilios=primeros_auxilios,
+        hold_expira_en=hold_expira,
+        monto_pago=monto_sugerido,
+        pago_estado="PENDING",
+        ventana_horaria=req.preferencia_horario
+    )
+    db.add(db_cita)
+    db.commit()
+    db.refresh(db_cita)
+
+    # 6. Notificación asíncrona a n8n
+    try:
+        n8n_payload = {
+            "evento": "nuevo_triaje_urgencia",
+            "cita_id": db_cita.id,
+            "tutor_nombre": clean_tutor_name,
+            "tutor_telefono": clean_phone,
+            "paciente_nombre": clean_pet_name,
+            "especie": req.especie,
+            "sintomas": req.sintomas_o_motivo,
+            "triaje_urgencia": nivel_urgencia,
+            "triaje_nivel_color": nivel_color,
+            "diagnostico_tentativo": diag_tentativo,
+            "tipo_atencion": tipo_atencion,
+            "bloque_asignado": bloque_asignado.isoformat(),
+            "estado_cita": "HOLD_15_MIN"
+        }
+        with httpx.Client(timeout=4.0) as client:
+            client.post(N8N_WEBHOOK_URL, json=n8n_payload)
+    except Exception as err:
+        logger.warning(f"Aviso a n8n no despachado (n8n no activo): {err}")
+
+    return {
+        "cita_id": db_cita.id,
+        "triaje_urgencia": nivel_urgencia,
+        "triaje_nivel_color": nivel_color,
+        "triaje_diagnostico_tentativo": diag_tentativo,
+        "protocolo_primeros_auxilios": primeros_auxilios,
+        "tipo_atencion_recomendada": tipo_atencion,
+        "bloque_asignado": bloque_asignado,
+        "hold_expira_en": hold_expira,
+        "monto_sugerido": monto_sugerido,
+        "bloques_alternativos": bloques_alt,
+        "estado_cita": "HOLD_15_MIN",
+        "tutor_id": tutor.id,
+        "paciente_id": paciente.id
+    }
+
+@app.post("/api/v1/covet/appointments/{cita_id}/confirm-payment", response_model=PaymentConfirmResponse)
+def confirmar_pago_cita(
+    cita_id: int,
+    req: PaymentConfirmRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Confirma el pago de la telemedicina o visita:
+    Pasa la cita de HOLD_15_MIN a CONFIRMED y notifica a n8n para WhatsApp inmediato.
+    """
+    cita = db.query(CitaDB).filter(CitaDB.id == cita_id).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    cita.estado_cita = "CONFIRMED"
+    cita.confirmada = True
+    cita.pago_estado = "SIMULATED_PAID" if req.metodo_pago == "DEMO_SIMULATION" else "PAID_GATEWAY"
+    cita.pago_metodo = req.metodo_pago
+    if req.monto:
+        cita.monto_pago = req.monto
+    db.commit()
+    db.refresh(cita)
+
+    paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
+    tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first() if paciente else None
+
+    # Notificar a n8n el pago exitoso
+    n8n_dispatched = False
+    try:
+        n8n_payload = {
+            "evento": "cita_pagada_y_confirmada",
+            "cita_id": cita.id,
+            "tutor_nombre": tutor.nombre if tutor else "Tutor",
+            "tutor_telefono": tutor.telefono if tutor else "",
+            "paciente_nombre": paciente.nombre if paciente else "Paciente",
+            "tipo_atencion": cita.tipo_atencion,
+            "fecha_hora": cita.fecha_hora.isoformat(),
+            "monto_pago": cita.monto_pago,
+            "pago_metodo": cita.pago_metodo,
+            "estado_cita": "CONFIRMED"
+        }
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.post(N8N_WEBHOOK_URL, json=n8n_payload)
+            n8n_dispatched = resp.is_success
+    except Exception as err:
+        logger.warning(f"n8n webhook error en confirmación de pago: {err}")
+
+    return {
+        "cita_id": cita.id,
+        "estado_cita": "CONFIRMED",
+        "pago_estado": cita.pago_estado,
+        "pago_metodo": cita.pago_metodo or req.metodo_pago,
+        "mensaje": "¡Pago recibido y cupo clínico 100% confirmado! WhatsApp enviado al tutor.",
+        "n8n_dispatched": n8n_dispatched,
+        "resumen_cita": {
+            "fecha_hora": cita.fecha_hora.isoformat(),
+            "tipo_atencion": cita.tipo_atencion,
+            "paciente": paciente.nombre if paciente else "Paciente",
+            "tutor": tutor.nombre if tutor else "Tutor",
+            "telefono": tutor.telefono if tutor else ""
+        }
+    }
