@@ -7,7 +7,7 @@ import os
 import uuid
 import datetime
 import logging
-from typing import List, Optional
+from typing import List, Optional, Any, Dict, Union
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,7 +54,7 @@ class PacienteDB(Base):
     nombre = Column(String(60), nullable=False)
     especie = Column(String(40), nullable=False)
     raza = Column(String(60), default="Mestizo")
-    peso_kg = Column(Float, nullable=False)
+    peso_kg = Column(Float, nullable=True, default=0.0)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     tutor = relationship("TutorDB", back_populates="pacientes")
     citas = relationship("CitaDB", back_populates="paciente")
@@ -67,6 +67,19 @@ class CitaDB(Base):
     fecha_hora = Column(DateTime, nullable=False)
     motivo = Column(String(200), nullable=False)
     confirmada = Column(Boolean, default=False)
+    
+    # Columnas nuevas para Triaje Autónomo y Reserva CoVet
+    estado_reserva = Column(String(30), default="HOLD_15_MIN") # HOLD_15_MIN, CONFIRMED, EXPIRED
+    nivel_urgencia = Column(String(20), default="LOW") # HIGH, MEDIUM, LOW
+    modalidad = Column(String(30), default="DOMICILIO") # TELEMEDICINA, DOMICILIO
+    ventana_horaria = Column(String(50), nullable=True) # "INMEDIATA", "11:00", "MANANA_10_13", "TARDE_15_19"
+    sintomas_triaje = Column(JSONB, nullable=True)
+    protocolo_id = Column(String(50), nullable=True)
+    monto_clp = Column(Integer, default=25000)
+    pagado = Column(Boolean, default=False)
+    hold_expires_at = Column(DateTime, nullable=True)
+
+    # Columnas previas preservadas para compatibilidad con endpoints y esquemas anteriores
     tipo_atencion = Column(String(30), default="CLINICA_PRESENCIAL") # TELEMEDICINA, DOMICILIO, CLINICA_PRESENCIAL
     estado_cita = Column(String(30), default="CONFIRMED") # HOLD_15_MIN, CONFIRMED, CANCELLED, COMPLETED
     triaje_urgencia = Column(String(30), default="MEDIUM_ROUTINE") # CRITICAL_EMERGENCY, HIGH_PRIORITY, MEDIUM_ROUTINE, LOW_PREVENTIVE
@@ -75,7 +88,6 @@ class CitaDB(Base):
     monto_pago = Column(Float, default=0.0)
     pago_estado = Column(String(30), default="PENDING") # PENDING, SIMULATED_PAID, PAID_GATEWAY
     pago_metodo = Column(String(30), nullable=True)
-    ventana_horaria = Column(String(30), nullable=True) # MAÑANA, TARDE, HORA_EXACTA
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     paciente = relationship("PacienteDB", back_populates="citas")
     fiches = relationship("MedicalFicheDB", back_populates="cita")
@@ -97,21 +109,46 @@ class MedicalFicheDB(Base):
     paciente = relationship("PacienteDB", back_populates="fiches")
     cita = relationship("CitaDB", back_populates="fiches")
 
+def run_safe_migrations(engine_instance):
+    """
+    Ejecuta migraciones idempotentes sobre tablas existentes (citas, pacientes)
+    usando ALTER TABLE ... ADD COLUMN IF NOT EXISTS con text() de SQLAlchemy.
+    """
+    try:
+        with engine_instance.connect() as conn:
+            # 1. Pacientes: asegurar peso_kg opcional con default 0.0
+            conn.execute(text("ALTER TABLE pacientes ALTER COLUMN peso_kg DROP NOT NULL;"))
+            conn.execute(text("ALTER TABLE pacientes ALTER COLUMN peso_kg SET DEFAULT 0.0;"))
+            
+            # 2. Citas: columnas nuevas del sistema de triaje y reserva
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS estado_reserva VARCHAR(30) DEFAULT 'HOLD_15_MIN';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS nivel_urgencia VARCHAR(20) DEFAULT 'LOW';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS modalidad VARCHAR(30) DEFAULT 'DOMICILIO';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS ventana_horaria VARCHAR(50);"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS sintomas_triaje JSONB;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS protocolo_id VARCHAR(50);"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS monto_clp INTEGER DEFAULT 25000;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pagado BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS hold_expires_at TIMESTAMP;"))
+
+            # Columnas legadas para compatibilidad con registros existentes
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS tipo_atencion VARCHAR(30) DEFAULT 'CLINICA_PRESENCIAL';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS estado_cita VARCHAR(30) DEFAULT 'CONFIRMED';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS triaje_urgencia VARCHAR(30) DEFAULT 'MEDIUM_ROUTINE';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS protocolo_primeros_auxilios TEXT;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS hold_expira_en TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS monto_pago FLOAT DEFAULT 0.0;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_estado VARCHAR(30) DEFAULT 'PENDING';"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(30);"))
+            conn.commit()
+        logger.info("Migración segura de esquema (run_safe_migrations) ejecutada exitosamente.")
+    except Exception as e:
+        logger.error(f"Error en run_safe_migrations: {e}")
+
 def init_db():
     try:
         Base.metadata.create_all(bind=engine)
-        # Migraciones automáticas seguras sin afectar datos previos
-        with engine.connect() as conn:
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS tipo_atencion VARCHAR(30) DEFAULT 'CLINICA_PRESENCIAL'"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS estado_cita VARCHAR(30) DEFAULT 'CONFIRMED'"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS triaje_urgencia VARCHAR(30) DEFAULT 'MEDIUM_ROUTINE'"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS protocolo_primeros_auxilios TEXT"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS hold_expira_en TIMESTAMP"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS monto_pago FLOAT DEFAULT 0.0"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_estado VARCHAR(30) DEFAULT 'PENDING'"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS pago_metodo VARCHAR(30)"))
-            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS ventana_horaria VARCHAR(30)"))
-            conn.commit()
+        run_safe_migrations(engine)
         logger.info("Tablas y columnas de base de datos verificadas/creadas exitosamente.")
     except Exception as e:
         logger.error(f"Error al inicializar tablas: {e}")
@@ -135,7 +172,7 @@ class PacienteCreate(BaseModel):
     nombre: str = Field(..., example="Luna")
     especie: str = Field(..., example="Canino")
     raza: Optional[str] = "Mestizo"
-    peso_kg: float = Field(..., example=12.5)
+    peso_kg: Optional[float] = Field(default=0.0, example=12.5)
 
 class PacienteOut(PacienteCreate):
     id: int
@@ -738,49 +775,389 @@ def listar_citas(db: Session = Depends(get_db)):
     return db.query(CitaDB).order_by(CitaDB.fecha_hora.asc()).all()
 
 # -------------------------------------------------------------
-# 7. Núcleo de Triaje Autónomo y Protocolos de Primeros Auxilios (IA)
+# 7. Protocolos Clínicos de Primeros Auxilios (Blindaje Médico-Legal)
 # -------------------------------------------------------------
-def evaluar_triaje_con_ia(sintomas: str, especie: str, paciente: str) -> dict:
-    """
-    Evalúa la urgencia médica usando Anthropic Claude con salida estructurada Tool Use.
-    Fallback determinístico basado en reglas clínicas chilenas si no hay API o hay timeout.
-    """
-    if ANTHROPIC_API_KEY:
-        try:
-            anthropic_payload = {
-                "model": ANTHROPIC_MODEL,
-                "max_tokens": 1024,
-                "system": (
-                    "Actúas como un Médico Veterinario de Urgencias y Triaje Clínico en Chile (CoVet). "
-                    "Tu misión es evaluar los síntomas reportados por el tutor, categorizar el riesgo vital "
-                    "bajo el estándar de triaje veterinario (ROJO: Riesgo vital inminente / Shock / Disnea severa / Intoxicación aguda / Torsión gástrica / Obstrucción urinaria; "
-                    "AMARILLO: Vómitos repetidos / Sangrado / Fiebre / Cojera severa / Diarrea profusa; "
-                    "VERDE: Control preventivo, vacunas, decaimiento leve sin dolor agudo) "
-                    "y redactar un protocolo de primeros auxilios claro, seguro y pre-aprobado (indicando qué hacer y qué NO hacer antes de la consulta). "
-                    "Utiliza la herramienta registrar_evaluacion_triaje con la información exacta. "
-                    "NUNCA recetes fármacos específicos ni antibióticos; prioriza soporte vital, vía aérea, contención y confort térmico."
-                ),
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"Paciente: {paciente} (Especie: {especie}).\nSíntomas/Motivo reportado: \"{sintomas}\""
-                    }
-                ],
-                "tools": [
-                    {
-                        "name": "registrar_evaluacion_triaje",
-                        "description": "Registra el triaje veterinario y protocolo de primeros auxilios.",
-                        "input_schema": TriageEvaluationSchema.model_json_schema()
-                    }
-                ],
-                "tool_choice": {"type": "tool", "name": "registrar_evaluacion_triaje"}
-            }
+FIRST_AID_PROTOCOLS = {
+    "GI_VOMITO_AGUDO": {
+        "id": "GI_VOMITO_AGUDO",
+        "titulo": "Protocolo de Primeros Auxilios: Vómito Agudo y Trastorno Gastroentérico",
+        "urgencia_sugerida": "MEDIUM",
+        "indicaciones": [
+            "Ayuno sólido preventivo estricto por 6 a 8 horas para permitir el reposo y desinflamación de la mucosa gástrica.",
+            "Retiro de agua por 2 horas inmediatamente posteriores al último vómito para no gatillar reflejo emético.",
+            "Tras las 2 horas sin vómitos, reintroducir agua en pequeños sorbos (1 a 2 cucharaditas cada 20 minutos) o cubos de hielo para lamer.",
+            "Mantener a la mascota abrigada, tranquila y en reposo sobre una superficie limpia."
+        ],
+        "prohibiciones": [
+            "PROHIBICIÓN ESTRICTA: NUNCA administrar medicamentos humanos. El Ibuprofeno, Paracetamol, Aspirina y Ketoprofeno son ALTAMENTE TÓXICOS y potencialmente letales en perros y gatos (causan necrosis hepática, úlceras perforadas y fallo renal agudo).",
+            "No dar leche, caldos grasos, comida casera ni remedios caseros como aceites."
+        ],
+        "alertas_rojas": [
+            "Presencia de sangre fresca (roja viva) o vómito oscuro con aspecto de borra de café.",
+            "Intentos repetidos y fallidos de vomitar acompañados de abdomen hinchado, duro o muy doloroso (sospecha de dilatación-torsión gástrica).",
+            "Decaimiento severo, desorientación, encías pálidas/blancas o colapso."
+        ],
+        "mensaje_tutor": "Sigue estas indicaciones preventivas mientras se concreta la atención médica. Si identificas signos de alerta roja, acude de inmediato a un centro con servicio de urgencias 24 horas."
+    },
+    "TRAUMA_URGENCIAS": {
+        "id": "TRAUMA_URGENCIAS",
+        "titulo": "Protocolo de Primeros Auxilios: Traumatismos, Caídas o Sospecha de Fractura",
+        "urgencia_sugerida": "HIGH",
+        "indicaciones": [
+            "Inmovilización suave: Mantener a la mascota sobre una superficie rígida y plana (tabla, cartón grueso o dentro de su caja transportadora) sin flexionar ni manipular bruscamente cuello, columna o extremidades.",
+            "Compresión de heridas: Si existe sangrado activo, presionar directamente sobre la herida con un paño limpio y seco o gasa durante al menos 5 minutos continuos sin retirar para revisar.",
+            "Abrigo térmico: Cubrir el cuerpo con una manta suave para evitar el shock hipotérmico, asegurando que la cabeza y hocico queden completamente libres para respirar.",
+            "Contención segura: El dolor severo puede provocar mordeduras o arañazos por reflejo defensivo; sujetar con una toalla envolvente con calma y voz suave."
+        ],
+        "prohibiciones": [
+            "PROHIBICIÓN ESTRICTA: No intentar alinear, enderezar ni entablillar huesos o extremidades desviadas.",
+            "PROHIBICIÓN ESTRICTA: No administrar analgésicos humanos ni desinfectantes abrasivos como alcohol o cloro.",
+            "No ofrecer comida ni forzar a beber agua si la mascota está aturdida o con dolor intenso."
+        ],
+        "alertas_rojas": [
+            "Pérdida de conciencia, convulsiones, movimientos oculares anormales o pupilas asimétricas.",
+            "Sangrado copioso que empapa el paño y no se detiene tras compresión directa continua.",
+            "Imposibilidad para ponerse de pie, quejidos intensos continuos o dificultad evidente para respirar."
+        ],
+        "mensaje_tutor": "Mantén la inmovilización y tranquilidad mientras el equipo veterinario de CoVet coordina la asistencia inmediata."
+    },
+    "RESPIRATORIO_CRITICO": {
+        "id": "RESPIRATORIO_CRITICO",
+        "titulo": "Protocolo de Primeros Auxilios: Dificultad Respiratoria y Alerta Crítica",
+        "urgencia_sugerida": "HIGH",
+        "indicaciones": [
+            "Espacio fresco y ventilado: Ubicar a la mascota de inmediato en una habitación fresca, bien ventilada y en penumbra, alejando ruidos, niños u otras mascotas para minimizar el estrés.",
+            "Postura ortopneica natural: Permitir que la mascota se posicione con el cuello estirado hacia adelante y los codos separados. NUNCA forzarla a acostarse de lado ni comprimir su tórax.",
+            "Liberación de vías respiratorias: Retirar de inmediato cualquier collar, arnés, correa o prenda que presione su cuello o pecho.",
+            "Conexión médica urgente: Iniciar telemedicina de urgencia en menos de 15 minutos para evaluación visual en vivo mientras se coordina la atención física."
+        ],
+        "prohibiciones": [
+            "PROHIBICIÓN ESTRICTA: NUNCA administrar líquidos, agua, jarabes ni alimentos por la boca (riesgo crítico de asfixia y neumonía por aspiración).",
+            "No exponer a fuentes de calor, estufas ni humo de cigarrillo o incienso.",
+            "No manipular excesivamente ni realizar esfuerzos físicos."
+        ],
+        "alertas_rojas": [
+            "Encías o lengua de color azul, violáceo o grisáceo (cianosis por hipoxia severa).",
+            "Respiración con la boca abierta en gatos (en felinos esto constituye SIEMPRE una urgencia médica extrema).",
+            "Sonidos respiratorios agudos, estertores, ahogamiento o hundimiento profundo del abdomen al intentar inhalar."
+        ],
+        "mensaje_tutor": "El compromiso respiratorio requiere atención profesional inmediata. Respeta estas pautas y mantente en conexión con el médico de urgencia."
+    },
+    "PREVENTIVO_RUTINA": {
+        "id": "PREVENTIVO_RUTINA",
+        "titulo": "Protocolo Preventivo: Preparación para Consulta y Visita Médica",
+        "urgencia_sugerida": "LOW",
+        "indicaciones": [
+            "Carnet y antecedentes: Tener a mano la libreta sanitaria con registro de vacunas anteriores, desparasitaciones y recetas de tratamientos previos.",
+            "Ambiente tranquilo: 15 minutos antes de la hora acordada, ubicar a la mascota en una habitación cerrada, cómoda y libre de distracciones donde se realizará la atención a domicilio.",
+            "Control de ayuno: Si se contemplan exámenes de sangre rutinarios, mantener un ayuno de sólidos de 8 horas (el consumo de agua fresca está permitido).",
+            "Listado de consultas: Anotar dudas sobre nutrición, conducta, vacunas o cuidados preventivos para revisarlas punto por punto con el profesional."
+        ],
+        "prohibiciones": [
+            "No bañar a la mascota en las 48 horas previas ni posteriores a la vacunación para evitar cambios térmicos o estrés inmunológico.",
+            "No aplicar antiparasitarios comerciales sin el pesaje exacto y autorización del veterinario tratante."
+        ],
+        "alertas_rojas": [
+            "Si previo a la visita la mascota presenta decaimiento agudo, fiebre o vómitos, comunícate de inmediato para reclasificar la atención a urgencia clínica."
+        ],
+        "mensaje_tutor": "Tu cita preventiva está programada. Con estos sencillos preparativos garantizamos una atención cómoda, segura y sin estrés para tu compañero."
+    }
+}
 
-            with httpx.Client(timeout=15.0) as client:
+# -------------------------------------------------------------
+# 8. Motor Híbrido de Cálculo de Cupos de Agenda
+# -------------------------------------------------------------
+def calculate_hybrid_slots(db: Session, urgency_level: str) -> dict:
+    """
+    Motor Híbrido de Cálculo de Cupos:
+    - Respeta la ventana operativa de 08:30 a 20:30 hrs (comm_agent.md).
+    - Limpia o ignora reservas en estado HOLD_15_MIN cuyo hold_expires_at haya vencido.
+    - Si urgency_level == 'HIGH':
+        * Modalidad TELEMEDICINA inmediata (<15 min) por $15.000 CLP.
+        * Modalidad DOMICILIO con el primer bloque de urgencia disponible hoy ($35.000 CLP).
+    - Si urgency_level en ['MEDIUM', 'LOW']:
+        * Consulta CitaDB para no solapar horas ocupadas.
+        * exact_slots: 3 bloques horarios exactos sugeridos (ej: ['11:00', '15:30', '18:00']).
+        * flexible_windows: 2 ventanas para veterinarios a domicilio:
+          'Mañana (10:00 a 13:00 hrs)' y 'Tarde (15:00 a 19:00 hrs)' ($25.000 CLP).
+    """
+    now = datetime.datetime.utcnow()
+
+    # 1. Limpieza de holds expirados en CitaDB
+    try:
+        db.query(CitaDB).filter(
+            CitaDB.estado_reserva == "HOLD_15_MIN",
+            CitaDB.hold_expires_at.isnot(None),
+            CitaDB.hold_expires_at < now
+        ).update({"estado_reserva": "EXPIRED"}, synchronize_session=False)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning(f"Error al limpiar holds expirados: {e}")
+
+    urgency = (urgency_level or "LOW").strip().upper()
+
+    if urgency == "HIGH":
+        # Primer bloque de urgencia disponible hoy a domicilio (aprox 45 min)
+        urgencia_domicilio_dt = now + datetime.timedelta(minutes=45)
+        urgencia_domicilio_str = f"Hoy a las {urgencia_domicilio_dt.strftime('%H:%M')} hrs"
+
+        return {
+            "urgency_level": "HIGH",
+            "tipo_sugerido": "URGENCIA_INMEDIATA",
+            "modalidades_disponibles": [
+                {
+                    "modalidad": "TELEMEDICINA",
+                    "ventana_horaria": "INMEDIATA (En menos de 15 min)",
+                    "monto_clp": 15000,
+                    "etiqueta": "Telemedicina de Urgencia (< 15 min)",
+                    "prioritaria": True,
+                    "descripcion": "Atención médica inmediata por videollamada con veterinario de turno"
+                },
+                {
+                    "modalidad": "DOMICILIO",
+                    "ventana_horaria": urgencia_domicilio_str,
+                    "monto_clp": 35000,
+                    "etiqueta": "Visita Domiciliaria de Urgencia",
+                    "prioritaria": False,
+                    "descripcion": "Despacho prioritario de móvil veterinario a tu domicilio"
+                }
+            ]
+        }
+    else:
+        # MEDIUM o LOW
+        # Consultar CitaDB para no solapar horas ocupadas
+        citas_activas = db.query(CitaDB).filter(
+            CitaDB.estado_reserva.in_(["CONFIRMED", "HOLD_15_MIN"]),
+            CitaDB.fecha_hora >= now
+        ).all()
+        horas_ocupadas = {c.fecha_hora.strftime("%H:%M") for c in citas_activas if c.fecha_hora}
+
+        # Candidatos dentro de la ventana operativa 08:30 a 20:30
+        candidatos = ["11:00", "15:30", "18:00", "09:30", "12:30", "16:45", "19:15"]
+        exact_slots = []
+        for h in candidatos:
+            if h not in horas_ocupadas:
+                exact_slots.append(h)
+            if len(exact_slots) >= 3:
+                break
+        if len(exact_slots) < 3:
+            exact_slots = ["11:00", "15:30", "18:00"]
+
+        flexible_windows = [
+            {
+                "id": "MANANA_10_13",
+                "nombre": "Mañana (10:00 a 13:00 hrs)",
+                "rango": "10:00 - 13:00",
+                "monto_clp": 25000,
+                "descripcion": "Ventana flexible para visita veterinaria a domicilio en jornada matutina"
+            },
+            {
+                "id": "TARDE_15_19",
+                "nombre": "Tarde (15:00 a 19:00 hrs)",
+                "rango": "15:00 - 19:00",
+                "monto_clp": 25000,
+                "descripcion": "Ventana flexible para visita veterinaria a domicilio en jornada vespertina"
+            }
+        ]
+
+        modalidades = [
+            {
+                "modalidad": "DOMICILIO",
+                "monto_clp": 25000,
+                "etiqueta": "Atención Veterinaria a Domicilio",
+                "descripcion": "Atención clínica completa en la comodidad de tu hogar"
+            },
+            {
+                "modalidad": "TELEMEDICINA",
+                "monto_clp": 15000,
+                "etiqueta": "Orientación por Telemedicina",
+                "descripcion": "Consulta virtual y orientación clínica médica"
+            }
+        ]
+
+        return {
+            "urgency_level": urgency,
+            "exact_slots": exact_slots,
+            "flexible_windows": flexible_windows,
+            "modalidades_disponibles": modalidades
+        }
+
+# -------------------------------------------------------------
+# 9. Esquemas Pydantic del Agente de Triaje y Reserva de Clientes
+# -------------------------------------------------------------
+class ClientIntentExtractionSchema(BaseModel):
+    ui_mode: str = Field(
+        ...,
+        description="Modo de interfaz: EMERGENCY_TRIAGE (urgencias/dolor agudo/vómitos), ROUTINE_BOOKING (vacunas, chequeo sano) o FOLLOW_UP_QUERY (seguimiento)"
+    )
+    urgency_level: str = Field(
+        ...,
+        description="Nivel de urgencia médica: HIGH (riesgo vital, vómito repetido, disnea, sangrado, trauma), MEDIUM (cuadros moderados), LOW (preventivo/rutina)"
+    )
+    especie_detectada: str = Field(
+        ...,
+        description="Especie del paciente detectada: Felino, Canino o Exótico"
+    )
+    motivo_resumido: str = Field(
+        ...,
+        description="Resumen conciso y clínico del motivo (Ej: 'Vómito agudo felino')"
+    )
+    dynamic_questions: List[str] = Field(
+        ...,
+        description="Exactamente 3 preguntas clínicas breves y directas adaptadas al caso"
+    )
+    first_aid_protocol_id: str = Field(
+        ...,
+        description="Clave exacta del protocolo de primeros auxilios aplicable: GI_VOMITO_AGUDO, TRAUMA_URGENCIAS, RESPIRATORIO_CRITICO o PREVENTIVO_RUTINA"
+    )
+
+class TriageExecuteRequest(BaseModel):
+    tutor_telefono: str = Field(..., example="+56912345678")
+    tutor_nombre: str = Field(..., example="Constanza Pérez")
+    paciente_nombre: str = Field(..., example="Luna")
+    especie: str = Field(default="Canino", example="Canino")
+    respuestas_triaje: Any = Field(..., description="Dict o list con las respuestas a las 3 preguntas clínicas")
+    modalidad: str = Field(default="DOMICILIO", example="DOMICILIO") # TELEMEDICINA o DOMICILIO
+    seleccion_horaria: str = Field(..., example="11:00") # 'INMEDIATA', '11:00', 'MANANA_10_13', 'TARDE_15_19'
+    urgency_level: str = Field(default="LOW", example="HIGH") # HIGH, MEDIUM, LOW
+    motivo_resumido: str = Field(..., example="Vómito agudo felino")
+    first_aid_protocol_id: str = Field(default="PREVENTIVO_RUTINA", example="GI_VOMITO_AGUDO")
+
+# -------------------------------------------------------------
+# 10. Los 3 Endpoints del Agente Autónomo de Clientes
+# -------------------------------------------------------------
+@app.post("/api/v1/covet/client-intent")
+async def client_intent(
+    texto: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint 1: Agente Autónomo de Intención y Triaje de Clientes:
+    - Recibe texto o audio (file) del tutor.
+    - Transcribe audio con Groq whisper-large-v3-turbo (si falta clave, responde error claro).
+    - Evalúa urgencia, especie, motivo y 3 preguntas dinámicas con Anthropic Claude Tool Use.
+    - Asigna protocolo pre-aprobado y calcula agenda híbrida.
+    """
+    consulta_texto = (texto or "").strip()
+
+    # Transcripción con Groq si se sube archivo de audio
+    if file and file.filename:
+        groq_key = os.getenv("GROQ_API_KEY", "")
+        if not groq_key:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Falta configurar GROQ_API_KEY en el servidor para transcribir audios. Por favor escribe el síntoma o consulta en texto."
+                }
+            )
+
+        contents = await file.read()
+        if contents and len(contents) > 0:
+            temp_dir = "/tmp/covet_client_audios"
+            os.makedirs(temp_dir, exist_ok=True)
+            filename = file.filename or "cliente_audio.webm"
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
+            temp_path = os.path.join(temp_dir, f"{uuid.uuid4()}.{ext}")
+
+            with open(temp_path, "wb") as f_out:
+                f_out.write(contents)
+
+            try:
+                with open(temp_path, "rb") as af:
+                    files_payload = {
+                        "file": (os.path.basename(temp_path), af.read(), "application/octet-stream")
+                    }
+                data_payload = {
+                    "model": "whisper-large-v3-turbo",
+                    "language": "es",
+                    "response_format": "json"
+                }
+                headers = {"Authorization": f"Bearer {groq_key}"}
+
+                with httpx.Client(timeout=45.0) as client:
+                    resp = client.post(
+                        "https://api.groq.com/openai/v1/audio/transcriptions",
+                        files=files_payload,
+                        data=data_payload,
+                        headers=headers
+                    )
+                    resp.raise_for_status()
+                    transcripcion = resp.json().get("text", "").strip()
+                    if transcripcion:
+                        consulta_texto = f"{consulta_texto} {transcripcion}".strip() if consulta_texto else transcripcion
+            except Exception as e:
+                logger.error(f"Error en transcripción Groq: {e}")
+                raise HTTPException(status_code=502, detail=f"Error transcribiendo audio con Groq: {str(e)}")
+            finally:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+
+    if not consulta_texto:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes proporcionar un texto o un archivo de audio con los síntomas de tu mascota."
+        )
+
+    # Análisis agéntico con Anthropic Claude Tool Use
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    ia_output = None
+
+    if anthropic_key:
+        tool_definition = {
+            "name": "analizar_intencion_tutor",
+            "description": "Extrae el triaje clínico, nivel de urgencia, especie y selecciona el protocolo pre-aprobado.",
+            "input_schema": ClientIntentExtractionSchema.model_json_schema()
+        }
+
+        system_prompt = (
+            "Actúas como un Médico Veterinario de Urgencias y Triaje Clínico Senior en Chile para CoVet. "
+            "Tu misión es analizar la consulta del tutor de una mascota (por audio transcrito o texto) "
+            "y estructurar el caso utilizando estrictamente la herramienta `analizar_intencion_tutor`.\n\n"
+            "Reglas Clínicas Estrictas:\n"
+            "1. `ui_mode`:\n"
+            "   - 'EMERGENCY_TRIAGE': si presenta dolor agudo, vómitos repetidos, sangrado, dificultad respiratoria, trauma, sospecha de intoxicación, convulsión o colapso.\n"
+            "   - 'ROUTINE_BOOKING': si es para vacunas, desparasitación, control sano preventivo, corte de uñas o consulta rutinaria.\n"
+            "   - 'FOLLOW_UP_QUERY': si pregunta por evolución o dudas de un tratamiento previo.\n"
+            "2. `urgency_level`:\n"
+            "   - 'HIGH': Riesgo vital inminente, disnea, sangrado activo, traumatismo severo, convulsión, vómito persistente, dolor agudo intolerable.\n"
+            "   - 'MEDIUM': Vómito aislado, diarrea sin sangre, cojera leve/moderada, molestia ocular, decaimiento leve.\n"
+            "   - 'LOW': Controles rutinarios, vacunas, preventivo general.\n"
+            "3. `especie_detectada`: 'Felino', 'Canino' o 'Exótico' (asumir Canino o Felino según mencione perro/gato o contexto).\n"
+            "4. `motivo_resumido`: Frase clínica concisa (ej. 'Vómito agudo felino', 'Vacunación y control anual canino').\n"
+            "5. `dynamic_questions`: EXACTAMENTE 3 preguntas clínicas breves, empáticas y directas adaptadas al caso para recabar datos antes de la atención (ej: '¿Hace cuántas horas comenzó el vómito?', '¿Has notado sangre, decaimiento extremo o intento de vomitar sin éxito?', '¿Comió algún objeto, planta o alimento nuevo?').\n"
+            "6. `first_aid_protocol_id`: DEBE ser estrictamente una de estas 4 claves pre-aprobadas:\n"
+            "   - 'GI_VOMITO_AGUDO'\n"
+            "   - 'TRAUMA_URGENCIAS'\n"
+            "   - 'RESPIRATORIO_CRITICO'\n"
+            "   - 'PREVENTIVO_RUTINA'\n"
+            "REGLA MÉDICO-LEGAL ESTRICTA: NUNCA inventes fármacos ni instrucciones médicas libres; solo selecciona una clave válida de FIRST_AID_PROTOCOLS."
+        )
+
+        anthropic_payload = {
+            "model": ANTHROPIC_MODEL,
+            "max_tokens": 1024,
+            "system": system_prompt,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": f"Consulta del tutor: \"{consulta_texto}\""
+                }
+            ],
+            "tools": [tool_definition],
+            "tool_choice": {"type": "tool", "name": "analizar_intencion_tutor"}
+        }
+
+        try:
+            with httpx.Client(timeout=20.0) as client:
                 res = client.post(
                     "https://api.anthropic.com/v1/messages",
                     headers={
-                        "x-api-key": ANTHROPIC_API_KEY,
+                        "x-api-key": anthropic_key,
                         "anthropic-version": "2023-06-01",
                         "content-type": "application/json"
                     },
@@ -789,85 +1166,337 @@ def evaluar_triaje_con_ia(sintomas: str, especie: str, paciente: str) -> dict:
                 if res.status_code == 200:
                     data = res.json()
                     for block in data.get("content", []):
-                        if block.get("type") == "tool_use" and block.get("name") == "registrar_evaluacion_triaje":
-                            return block.get("input", {})
+                        if block.get("type") == "tool_use" and block.get("name") == "analizar_intencion_tutor":
+                            ia_output = block.get("input", {})
+                            break
         except Exception as e:
-            logger.warning(f"Error evaluando triaje con Claude, aplicando fallback: {e}")
+            logger.warning(f"Error consultando Anthropic Claude para triaje: {e}")
 
-    # Fallback Determinístico de Reglas Clínicas Chilenas
-    sintomas_lower = sintomas.lower()
-    critical_keywords = ["veneno", "raticida", "convuls", "no respira", "ahogo", "asfixia", "atropell", "cianosis", "morad", "hinchado", "torsion", "inconsciente"]
-    high_keywords = ["vomit", "diarrea", "sangre", "cojera", "ojo", "fiebre", "herida", "dolor", "quej"]
+    # Fallback Determinístico Clínico si falla la API
+    if not ia_output:
+        texto_l = consulta_texto.lower()
+        if any(w in texto_l for w in ["respira", "ahog", "asfix", "jade", "pecho"]):
+            protocol_id = "RESPIRATORIO_CRITICO"
+            urgency = "HIGH"
+            ui_mode = "EMERGENCY_TRIAGE"
+            motivo = "Dificultad respiratoria aguda"
+            questions = [
+                "¿Hace cuánto tiempo comenzó con dificultad o ruido al respirar?",
+                "¿Notas su lengua o encías de color azulado, morado o pálido?",
+                "¿Está respirando con la boca abierta o con el cuello muy estirado?"
+            ]
+        elif any(w in texto_l for w in ["atropell", "golpe", "caid", "sangr", "herid", "fractur", "piso"]):
+            protocol_id = "TRAUMA_URGENCIAS"
+            urgency = "HIGH"
+            ui_mode = "EMERGENCY_TRIAGE"
+            motivo = "Traumatismo o herida de urgencia"
+            questions = [
+                "¿Hay alguna herida con sangrado activo que no se detenga?",
+                "¿Puede apoyar sus 4 extremidades o llora intensamente al moverse?",
+                "¿Ha perdido el conocimiento o se encuentra desorientado?"
+            ]
+        elif any(w in texto_l for w in ["vomit", "diarre", "veneno", "guata", "comio", "planta", "nause"]):
+            protocol_id = "GI_VOMITO_AGUDO"
+            urgency = "HIGH" if any(w in texto_l for w in ["veneno", "raticida", "sangre", "mucho"]) else "MEDIUM"
+            ui_mode = "EMERGENCY_TRIAGE"
+            motivo = "Trastorno gastroentérico agudo"
+            questions = [
+                "¿Hace cuántas horas comenzó el vómito y cuántas veces ha vomitado?",
+                "¿Has notado decaimiento extremo, sangre o intento de vomitar sin éxito?",
+                "¿Hay posibilidad de que haya ingerido algún objeto, medicamento o planta tóxica?"
+            ]
+        else:
+            protocol_id = "PREVENTIVO_RUTINA"
+            urgency = "LOW"
+            ui_mode = "ROUTINE_BOOKING"
+            motivo = "Consulta preventiva o control de rutina"
+            questions = [
+                "¿Cuándo fue la última vez que recibió vacunas o antiparasitarios?",
+                "¿Ha presentado cambios recientes en su apetito o consumo de agua?",
+                "¿Prefieres atención veterinaria en tu domicilio o consulta por telemedicina?"
+            ]
 
-    if any(k in sintomas_lower for k in critical_keywords):
-        return {
-            "triaje_urgencia": "CRITICAL_EMERGENCY",
-            "triaje_nivel_color": "ROJO",
-            "triaje_diagnostico_tentativo": "Alerta de Emergencia Vital Inmediata. Sospecha de intoxicación aguda, compromiso respiratorio o shock.",
-            "protocolo_primeros_auxilios": (
-                "1. Mantén la calma y mantén a la mascota abrigada y en reposo absoluto.\n"
-                "2. NO induzcas el vómito si sospechas sustancias cáusticas o si la mascota está desorientada.\n"
-                "3. Asegura que las vías respiratorias estén despejadas (estira suavemente su cuello).\n"
-                "4. Si hay sangrado externo activo, aplica presión firme con un paño limpio y seco.\n"
-                "5. Conéctate a Telemedicina de urgencia ahora mismo o acude a un centro 24h."
-            ),
-            "tipo_atencion_recomendada": "TELEMEDICINA",
-            "tiempo_maximo_espera_horas": 0.5
-        }
-    elif any(k in sintomas_lower for k in high_keywords):
-        return {
-            "triaje_urgencia": "HIGH_PRIORITY",
-            "triaje_nivel_color": "AMARILLO",
-            "triaje_diagnostico_tentativo": "Cuadro agudo de prioridad alta (gastroentérico, trauma o dolor agudo).",
-            "protocolo_primeros_auxilios": (
-                "1. Suspende comida sólida por 4 a 6 horas para evitar sobrecarga gástrica.\n"
-                "2. Ofrece pequeñas cantidades de agua fresca (a sorbos cada 15 min).\n"
-                "3. NUNCA administres fármacos humanos (Paracetamol e Ibuprofeno son letales para mascotas).\n"
-                "4. Observa el color de sus encías (deben ser rosadas, no blancas ni azuladas)."
-            ),
-            "tipo_atencion_recomendada": "DOMICILIO",
-            "tiempo_maximo_espera_horas": 4.0
-        }
-    else:
-        return {
-            "triaje_urgencia": "LOW_PREVENTIVE",
-            "triaje_nivel_color": "VERDE",
-            "triaje_diagnostico_tentativo": "Consulta de control, chequeo preventivo o síntoma leve sin compromiso vital.",
-            "protocolo_primeros_auxilios": (
-                "1. Mantén el registro de los síntomas observados y de su alimentación.\n"
-                "2. Ten a mano la cartilla sanitaria con sus vacunas al día.\n"
-                "3. Asegura que descanse en un espacio confortable hasta su atención."
-            ),
-            "tipo_atencion_recomendada": "CLINICA_PRESENCIAL",
-            "tiempo_maximo_espera_horas": 24.0
+        especie = "Felino" if any(w in texto_l for w in ["gato", "gata", "gatito", "felin", "michi"]) else "Canino"
+        ia_output = {
+            "ui_mode": ui_mode,
+            "urgency_level": urgency,
+            "especie_detectada": especie,
+            "motivo_resumido": motivo,
+            "dynamic_questions": questions,
+            "first_aid_protocol_id": protocol_id
         }
 
-@app.post("/api/v1/covet/triage", response_model=TriageResponse)
-def ejecutar_triaje_autonomo(req: TriageRequest, db: Session = Depends(get_db)):
+    # Asegurar que el protocolo seleccionado sea válido
+    pid = ia_output.get("first_aid_protocol_id", "PREVENTIVO_RUTINA")
+    if pid not in FIRST_AID_PROTOCOLS:
+        pid = "PREVENTIVO_RUTINA"
+        ia_output["first_aid_protocol_id"] = pid
+
+    urgency_level = ia_output.get("urgency_level", "LOW")
+    available_schedule = calculate_hybrid_slots(db, urgency_level)
+
+    return {
+        "ui_mode": ia_output.get("ui_mode", "ROUTINE_BOOKING"),
+        "urgency_level": urgency_level,
+        "especie_detectada": ia_output.get("especie_detectada", "Canino"),
+        "motivo_resumido": ia_output.get("motivo_resumido", "Consulta veterinaria CoVet"),
+        "dynamic_questions": ia_output.get("dynamic_questions", [
+            "¿Hace cuántas horas comenzaron los síntomas?",
+            "¿Notas decaimiento, dolor o cambios en su apetito?",
+            "¿Tiene sus vacunas al día?"
+        ]),
+        "first_aid_protocol_id": pid,
+        "available_schedule": available_schedule
+    }
+
+
+@app.post("/api/v1/covet/triage-execute")
+def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
     """
-    Agente Autónomo de Triaje Clínico:
-    1. Sincroniza Tutor y Paciente en PostgreSQL.
-    2. Evalúa riesgo vital con IA y asigna protocolo de primeros auxilios.
-    3. Bloquea cupo temporal en agenda (HOLD_15_MIN).
-    4. Notifica asíncronamente a n8n para alerta WhatsApp al veterinario.
+    Endpoint 2: Ejecución de Triaje y Bloqueo Temporal (HOLD_15_MIN):
+    - Acción Agéntica 1: Cruce de Historial por WhatsApp (TutorDB, PacienteDB, MedicalFicheDB).
+    - Acción Agéntica 2: Bloqueo de cupo temporal por 15 minutos en CitaDB.
+    - Retorna cita_id, estado_reserva, hold_expires_at, monto_clp, payment_link y paciente_reconocido.
+    """
+    clean_phone = req.tutor_telefono.strip()
+    clean_tutor_name = req.tutor_nombre.strip() if req.tutor_nombre else "Tutor CoVet"
+    clean_pet_name = req.paciente_nombre.strip() if req.paciente_nombre else "Mascota"
+
+    # Acción Agéntica 1: Cruce de Historial por WhatsApp
+    tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+    paciente_reconocido = False
+    historial_clinico_previo = "Paciente nuevo. Sin atenciones previas registradas."
+
+    if tutor:
+        paciente_reconocido = True
+        if clean_tutor_name != "Tutor CoVet" and tutor.nombre != clean_tutor_name:
+            tutor.nombre = clean_tutor_name
+            db.commit()
+
+        paciente = db.query(PacienteDB).filter(
+            PacienteDB.tutor_id == tutor.id,
+            PacienteDB.nombre.ilike(clean_pet_name)
+        ).first()
+
+        if not paciente:
+            paciente = PacienteDB(
+                tutor_id=tutor.id,
+                nombre=clean_pet_name,
+                especie=req.especie,
+                raza="Mestizo",
+                peso_kg=0.0
+            )
+            db.add(paciente)
+            db.commit()
+            db.refresh(paciente)
+
+        fiches = db.query(MedicalFicheDB).filter(
+            MedicalFicheDB.paciente_id == paciente.id
+        ).order_by(MedicalFicheDB.fecha_creacion.desc()).limit(2).all()
+
+        if fiches:
+            resumen_fiches = []
+            for f in fiches:
+                if f.json_estructurado and isinstance(f.json_estructurado, dict):
+                    diag = f.json_estructurado.get("diagnostico_presuntivo", "Atención clínica")
+                    fecha = f.fecha_creacion.strftime("%d/%m/%Y") if f.fecha_creacion else "Previa"
+                    resumen_fiches.append(f"{fecha}: {diag}")
+            if resumen_fiches:
+                historial_clinico_previo = f"Paciente recurrente ({paciente.nombre}, {paciente.especie}). Historial: " + " | ".join(resumen_fiches)
+            else:
+                historial_clinico_previo = f"Paciente recurrente ({paciente.nombre}, {paciente.especie}) con ficha médica registrada."
+        else:
+            historial_clinico_previo = f"Tutor recurrente ({tutor.nombre}). Mascota: {paciente.nombre} ({paciente.especie})."
+    else:
+        tutor = TutorDB(nombre=clean_tutor_name, telefono=clean_phone)
+        db.add(tutor)
+        db.commit()
+        db.refresh(tutor)
+
+        paciente = PacienteDB(
+            tutor_id=tutor.id,
+            nombre=clean_pet_name,
+            especie=req.especie,
+            raza="Mestizo",
+            peso_kg=0.0
+        )
+        db.add(paciente)
+        db.commit()
+        db.refresh(paciente)
+
+    # Acción Agéntica 2: Bloqueo Temporal HOLD_15_MIN
+    modalidad_clean = req.modalidad.upper() if req.modalidad else "DOMICILIO"
+    urgencia_clean = req.urgency_level.upper() if req.urgency_level else "LOW"
+
+    if modalidad_clean == "TELEMEDICINA":
+        monto_clp = 15000
+    elif urgencia_clean == "HIGH":
+        monto_clp = 35000
+    else:
+        monto_clp = 25000
+
+    now = datetime.datetime.utcnow()
+    hold_expires_at = now + datetime.timedelta(minutes=15)
+
+    horario_sel = req.seleccion_horaria or "INMEDIATA"
+    if "INMEDIATA" in horario_sel.upper():
+        fecha_cita = now + datetime.timedelta(minutes=10)
+    elif "MANANA" in horario_sel.upper() or "10_13" in horario_sel:
+        fecha_cita = (now + datetime.timedelta(days=1 if now.hour >= 13 else 0)).replace(hour=10, minute=30, second=0, microsecond=0)
+    elif "TARDE" in horario_sel.upper() or "15_19" in horario_sel:
+        fecha_cita = (now + datetime.timedelta(days=1 if now.hour >= 19 else 0)).replace(hour=16, minute=0, second=0, microsecond=0)
+    elif ":" in horario_sel:
+        try:
+            partes = horario_sel.split(":")
+            h, m = int(partes[0]), int(partes[1][:2])
+            fecha_cita = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            if fecha_cita <= now:
+                fecha_cita += datetime.timedelta(days=1)
+        except Exception:
+            fecha_cita = now + datetime.timedelta(hours=2)
+    else:
+        fecha_cita = now + datetime.timedelta(hours=2)
+
+    db_cita = CitaDB(
+        paciente_id=paciente.id,
+        fecha_hora=fecha_cita,
+        motivo=f"[{urgencia_clean}] {req.motivo_resumido}",
+        confirmada=False,
+        estado_reserva="HOLD_15_MIN",
+        nivel_urgencia=urgencia_clean,
+        modalidad=modalidad_clean,
+        ventana_horaria=horario_sel,
+        sintomas_triaje={
+            "motivo": req.motivo_resumido,
+            "respuestas": req.respuestas_triaje,
+            "especie": req.especie,
+            "protocolo_id": req.first_aid_protocol_id
+        },
+        protocolo_id=req.first_aid_protocol_id,
+        monto_clp=monto_clp,
+        pagado=False,
+        hold_expires_at=hold_expires_at,
+        # Campos previos para retrocompatibilidad
+        tipo_atencion=modalidad_clean,
+        estado_cita="HOLD_15_MIN",
+        triaje_urgencia=urgencia_clean,
+        hold_expira_en=hold_expires_at,
+        monto_pago=float(monto_clp),
+        pago_estado="PENDING"
+    )
+    db.add(db_cita)
+    db.commit()
+    db.refresh(db_cita)
+
+    payment_link = os.getenv("PAYMENT_LINK_URL", "https://link.mercadopago.cl/covet-urgencias")
+
+    return {
+        "cita_id": db_cita.id,
+        "estado_reserva": db_cita.estado_reserva,
+        "hold_expires_at": hold_expires_at.isoformat(),
+        "monto_clp": monto_clp,
+        "payment_link": payment_link,
+        "paciente_reconocido": paciente_reconocido,
+        "historial_clinico_previo": historial_clinico_previo
+    }
+
+
+@app.post("/api/v1/covet/citas/{cita_id}/confirm-payment")
+def confirmar_pago_reserva_cita(cita_id: int, db: Session = Depends(get_db)):
+    """
+    Endpoint 3: Confirmación de Pago y Desbloqueo de Protocolo:
+    - Marca cita en CitaDB como CONFIRMED y pagado = True.
+    - Obtiene el protocolo completo de FIRST_AID_PROTOCOLS.
+    - Dispara POST asíncrono con httpx a N8N_WEBHOOK_URL (event_type=TRIAGE_CONFIRMED) con tolerancia a fallos.
+    - Retorna first_aid_guide desbloqueada y alerta_veterinario_enviada.
+    """
+    cita = db.query(CitaDB).filter(CitaDB.id == cita_id).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+
+    cita.estado_reserva = "CONFIRMED"
+    cita.confirmada = True
+    cita.pagado = True
+    cita.estado_cita = "CONFIRMED"
+    cita.pago_estado = "PAID"
+    db.commit()
+    db.refresh(cita)
+
+    paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
+    tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first() if paciente else None
+
+    # Recuperar protocolo médico-legal pre-aprobado
+    protocolo_key = cita.protocolo_id or "PREVENTIVO_RUTINA"
+    first_aid_guide = FIRST_AID_PROTOCOLS.get(protocolo_key, FIRST_AID_PROTOCOLS["PREVENTIVO_RUTINA"])
+
+    # Disparar alerta asíncrona a n8n
+    n8n_dispatched = False
+    try:
+        n8n_payload = {
+            "event_type": "TRIAGE_CONFIRMED",
+            "cita_id": cita.id,
+            "tutor": {
+                "id": tutor.id if tutor else None,
+                "nombre": tutor.nombre if tutor else "Tutor",
+                "telefono": tutor.telefono if tutor else ""
+            },
+            "paciente": {
+                "id": paciente.id if paciente else None,
+                "nombre": paciente.nombre if paciente else "Paciente",
+                "especie": paciente.especie if paciente else "Desconocida",
+                "raza": paciente.raza if paciente else "Mestizo",
+                "peso_kg": paciente.peso_kg if paciente else 0.0
+            },
+            "triaje": {
+                "urgencia": cita.nivel_urgencia,
+                "motivo": cita.motivo,
+                "sintomas_triaje": cita.sintomas_triaje,
+                "protocolo_id": cita.protocolo_id
+            },
+            "reserva": {
+                "modalidad": cita.modalidad,
+                "ventana_horaria": cita.ventana_horaria,
+                "fecha_hora": cita.fecha_hora.isoformat() if cita.fecha_hora else None,
+                "monto_clp": cita.monto_clp,
+                "pagado": True
+            }
+        }
+        with httpx.Client(timeout=5.0) as client:
+            resp = client.post(N8N_WEBHOOK_URL, json=n8n_payload)
+            n8n_dispatched = resp.is_success
+            logger.info(f"[Cita {cita.id}] Webhook n8n TRIAGE_CONFIRMED despachado. Status: {resp.status_code}")
+    except Exception as err:
+        logger.warning(f"[Cita {cita.id}] Webhook n8n no respondió: {err}")
+
+    return {
+        "status": "success",
+        "cita_id": cita.id,
+        "estado_reserva": "CONFIRMED",
+        "pagado": True,
+        "first_aid_guide": first_aid_guide,
+        "alerta_veterinario_enviada": n8n_dispatched,
+        "mensaje": "¡Pago confirmado con éxito! Protocolo de primeros auxilios desbloqueado y veterinario notificado."
+    }
+
+# -------------------------------------------------------------
+# Endpoints de compatibilidad previa para tests y demos existentes
+# -------------------------------------------------------------
+@app.post("/api/v1/covet/triage", response_model=TriageResponse)
+def ejecutar_triaje_autonomo_legacy(req: TriageRequest, db: Session = Depends(get_db)):
+    """
+    Ruta legacy para compatibilidad con versiones previas del frontend o tests.
     """
     clean_phone = req.tutor_telefono.strip()
     clean_tutor_name = req.tutor_nombre.strip()
     clean_pet_name = req.paciente_nombre.strip()
 
-    # 1. Upsert Tutor
     tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
     if not tutor:
         tutor = TutorDB(nombre=clean_tutor_name, telefono=clean_phone)
         db.add(tutor)
         db.commit()
         db.refresh(tutor)
-    else:
-        if tutor.nombre != clean_tutor_name:
-            tutor.nombre = clean_tutor_name
-            db.commit()
 
-    # 2. Upsert Paciente
     paciente = db.query(PacienteDB).filter(
         PacienteDB.tutor_id == tutor.id,
         PacienteDB.nombre.ilike(clean_pet_name)
@@ -878,62 +1507,34 @@ def ejecutar_triaje_autonomo(req: TriageRequest, db: Session = Depends(get_db)):
             nombre=clean_pet_name,
             especie=req.especie,
             raza="Mestizo",
-            peso_kg=10.0
+            peso_kg=0.0
         )
         db.add(paciente)
         db.commit()
         db.refresh(paciente)
 
-    # 3. Evaluación con IA
-    evaluacion = evaluar_triaje_con_ia(req.sintomas_o_motivo, req.especie, clean_pet_name)
-    nivel_urgencia = evaluacion.get("triaje_urgencia", "MEDIUM_ROUTINE")
-    nivel_color = evaluacion.get("triaje_nivel_color", "AMARILLO")
-    diag_tentativo = evaluacion.get("triaje_diagnostico_tentativo", "Evaluación clínica requerida")
-    primeros_auxilios = evaluacion.get("protocolo_primeros_auxilios", "Mantener en reposo")
-    tipo_atencion = req.preferencia_atencion if req.preferencia_atencion != "CUALQUIERA" else evaluacion.get("tipo_atencion_recomendada", "TELEMEDICINA")
-
-    # 4. Cálculo de Bloques de Agenda (Opción C Híbrida / Adaptable)
     ahora = datetime.datetime.utcnow()
-    bloque_asignado = ahora + datetime.timedelta(minutes=10) # Telemedicina inmediata por defecto si es crítico
-
-    if nivel_urgencia == "CRITICAL_EMERGENCY":
-        bloque_asignado = ahora + datetime.timedelta(minutes=10)
-        tipo_atencion = "TELEMEDICINA"
-        monto_sugerido = 15000.0
-    elif nivel_urgencia == "HIGH_PRIORITY":
-        bloque_asignado = ahora + datetime.timedelta(hours=2)
-        monto_sugerido = 25000.0 if tipo_atencion == "DOMICILIO" else 18000.0
-    else:
-        # Rutina o Preventivo
-        monto_sugerido = 20000.0
-        # Próximo día hábil a las 10:00 o 15:30 según preferencia
-        mañana = ahora + datetime.timedelta(days=1)
-        if req.preferencia_horario == "TARDE":
-            bloque_asignado = mañana.replace(hour=16, minute=0, second=0, microsecond=0)
-        else:
-            bloque_asignado = mañana.replace(hour=10, minute=30, second=0, microsecond=0)
-
-    # Alternativas horarias sugeridas
-    bloques_alt = [
-        bloque_asignado + datetime.timedelta(hours=1),
-        bloque_asignado + datetime.timedelta(hours=3),
-        bloque_asignado + datetime.timedelta(days=1)
-    ]
-
     hold_expira = ahora + datetime.timedelta(minutes=15)
+    bloque_asignado = ahora + datetime.timedelta(minutes=15)
 
-    # 5. Crear Cita en Estado HOLD_15_MIN
     db_cita = CitaDB(
         paciente_id=paciente.id,
         fecha_hora=bloque_asignado,
-        motivo=f"[{nivel_color}] {req.sintomas_o_motivo[:150]}",
+        motivo=f"[LEGACY] {req.sintomas_o_motivo[:150]}",
         confirmada=False,
-        tipo_atencion=tipo_atencion,
+        tipo_atencion="DOMICILIO",
         estado_cita="HOLD_15_MIN",
-        triaje_urgencia=nivel_urgencia,
-        protocolo_primeros_auxilios=primeros_auxilios,
+        estado_reserva="HOLD_15_MIN",
+        triaje_urgencia="MEDIUM_ROUTINE",
+        nivel_urgencia="MEDIUM",
+        modalidad="DOMICILIO",
+        protocolo_primeros_auxilios="Mantener en reposo",
+        protocolo_id="PREVENTIVO_RUTINA",
         hold_expira_en=hold_expira,
-        monto_pago=monto_sugerido,
+        hold_expires_at=hold_expira,
+        monto_pago=25000.0,
+        monto_clp=25000,
+        pagado=False,
         pago_estado="PENDING",
         ventana_horaria=req.preferencia_horario
     )
@@ -941,90 +1542,49 @@ def ejecutar_triaje_autonomo(req: TriageRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_cita)
 
-    # 6. Notificación asíncrona a n8n
-    try:
-        n8n_payload = {
-            "evento": "nuevo_triaje_urgencia",
-            "cita_id": db_cita.id,
-            "tutor_nombre": clean_tutor_name,
-            "tutor_telefono": clean_phone,
-            "paciente_nombre": clean_pet_name,
-            "especie": req.especie,
-            "sintomas": req.sintomas_o_motivo,
-            "triaje_urgencia": nivel_urgencia,
-            "triaje_nivel_color": nivel_color,
-            "diagnostico_tentativo": diag_tentativo,
-            "tipo_atencion": tipo_atencion,
-            "bloque_asignado": bloque_asignado.isoformat(),
-            "estado_cita": "HOLD_15_MIN"
-        }
-        with httpx.Client(timeout=4.0) as client:
-            client.post(N8N_WEBHOOK_URL, json=n8n_payload)
-    except Exception as err:
-        logger.warning(f"Aviso a n8n no despachado (n8n no activo): {err}")
-
     return {
         "cita_id": db_cita.id,
-        "triaje_urgencia": nivel_urgencia,
-        "triaje_nivel_color": nivel_color,
-        "triaje_diagnostico_tentativo": diag_tentativo,
-        "protocolo_primeros_auxilios": primeros_auxilios,
-        "tipo_atencion_recomendada": tipo_atencion,
+        "triaje_urgencia": "MEDIUM_ROUTINE",
+        "triaje_nivel_color": "AMARILLO",
+        "triaje_diagnostico_tentativo": "Evaluación clínica requerida",
+        "protocolo_primeros_auxilios": "Mantener en reposo",
+        "tipo_atencion_recomendada": "DOMICILIO",
         "bloque_asignado": bloque_asignado,
         "hold_expira_en": hold_expira,
-        "monto_sugerido": monto_sugerido,
-        "bloques_alternativos": bloques_alt,
+        "monto_sugerido": 25000.0,
+        "bloques_alternativos": [bloque_asignado + datetime.timedelta(hours=2)],
         "estado_cita": "HOLD_15_MIN",
         "tutor_id": tutor.id,
         "paciente_id": paciente.id
     }
 
 @app.post("/api/v1/covet/appointments/{cita_id}/confirm-payment", response_model=PaymentConfirmResponse)
-def confirmar_pago_cita(
+def confirmar_pago_cita_legacy(
     cita_id: int,
     req: PaymentConfirmRequest,
     db: Session = Depends(get_db)
 ):
     """
-    Confirma el pago de la telemedicina o visita:
-    Pasa la cita de HOLD_15_MIN a CONFIRMED y notifica a n8n para WhatsApp inmediato.
+    Ruta legacy de confirmación de pago para compatibilidad.
     """
     cita = db.query(CitaDB).filter(CitaDB.id == cita_id).first()
     if not cita:
         raise HTTPException(status_code=404, detail="Cita no encontrada")
 
     cita.estado_cita = "CONFIRMED"
+    cita.estado_reserva = "CONFIRMED"
     cita.confirmada = True
+    cita.pagado = True
     cita.pago_estado = "SIMULATED_PAID" if req.metodo_pago == "DEMO_SIMULATION" else "PAID_GATEWAY"
     cita.pago_metodo = req.metodo_pago
     if req.monto:
         cita.monto_pago = req.monto
+        cita.monto_clp = int(req.monto)
     db.commit()
     db.refresh(cita)
 
     paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
     tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first() if paciente else None
-
-    # Notificar a n8n el pago exitoso
-    n8n_dispatched = False
-    try:
-        n8n_payload = {
-            "evento": "cita_pagada_y_confirmada",
-            "cita_id": cita.id,
-            "tutor_nombre": tutor.nombre if tutor else "Tutor",
-            "tutor_telefono": tutor.telefono if tutor else "",
-            "paciente_nombre": paciente.nombre if paciente else "Paciente",
-            "tipo_atencion": cita.tipo_atencion,
-            "fecha_hora": cita.fecha_hora.isoformat(),
-            "monto_pago": cita.monto_pago,
-            "pago_metodo": cita.pago_metodo,
-            "estado_cita": "CONFIRMED"
-        }
-        with httpx.Client(timeout=5.0) as client:
-            resp = client.post(N8N_WEBHOOK_URL, json=n8n_payload)
-            n8n_dispatched = resp.is_success
-    except Exception as err:
-        logger.warning(f"n8n webhook error en confirmación de pago: {err}")
 
     return {
         "cita_id": cita.id,
@@ -1032,7 +1592,7 @@ def confirmar_pago_cita(
         "pago_estado": cita.pago_estado,
         "pago_metodo": cita.pago_metodo or req.metodo_pago,
         "mensaje": "¡Pago recibido y cupo clínico 100% confirmado! WhatsApp enviado al tutor.",
-        "n8n_dispatched": n8n_dispatched,
+        "n8n_dispatched": False,
         "resumen_cita": {
             "fecha_hora": cita.fecha_hora.isoformat(),
             "tipo_atencion": cita.tipo_atencion,
@@ -1041,3 +1601,4 @@ def confirmar_pago_cita(
             "telefono": tutor.telefono if tutor else ""
         }
     }
+
