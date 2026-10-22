@@ -1,21 +1,10 @@
-#!/bin/bash
-# deploy_webhook.sh — Disparador manual o de webhook para desplegar en Coolify
-#
-# Uso:
-#   ./deploy_webhook.sh [COOLIFY_WEBHOOK_URL]
-#
-# O configura tu variable de entorno:
-#   export VET_COOLIFY_WEBHOOK="https://coolify.142.132.233.38.sslip.io/webhooks/deploy/..."
-
-WEBHOOK_URL="${1:-$VET_COOLIFY_WEBHOOK}"
-
-if [ -z "$WEBHOOK_URL" ]; then
-    echo "⚠️ Por favor proporciona la URL del Webhook de Coolify:"
-    echo "   ./deploy_webhook.sh https://coolify.142.132.233.38.sslip.io/webhooks/deploy/TU_UUID"
-    exit 1
-fi
-
-echo "🚀 Disparando despliegue en Coolify..."
-curl -X POST "$WEBHOOK_URL" -H "Content-Type: application/json" -d '{"branch":"main"}'
-echo ""
-echo "✅ Señal de despliegue enviada a Coolify."
+#!/usr/bin/env bash
+set -e
+echo "[CoVet Deploy] 1/3 Compilando Frontend PWA..."
+cd /home/ashasasha/vet/frontend && npm run build
+echo "[CoVet Deploy] 2/3 Sincronizando código y estáticos con VPS Hetzner..."
+rsync -avz --exclude 'node_modules' --exclude '.git' /home/ashasasha/vet/ root@142.132.233.38:/opt/vet/
+ssh root@142.132.233.38 "mkdir -p /var/www/covet && cp -r /opt/vet/frontend/dist/* /var/www/covet/ && chown -R caddy:caddy /var/www/covet"
+echo "[CoVet Deploy] 3/3 Actualizando contenedor vet-backend..."
+ssh root@142.132.233.38 "cd /opt/vet && docker compose up -d --build vet-backend"
+echo "[CoVet Deploy] Despliegue completado en https://vet.142.132.233.38.sslip.io"
