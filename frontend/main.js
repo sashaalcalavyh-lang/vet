@@ -3,13 +3,21 @@
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://vet-api.142.132.233.38.sslip.io';
 
-// ==========================================
+// ========================================================
 // 1. ESTADO GLOBAL DE LA APLICACIÓN
-// ==========================================
+// ========================================================
 let currentTaskId = null;
+let activeTriageData = null;
 let activeTriageCitaId = null;
 let holdTimerInterval = null;
 let holdSecondsLeft = 15 * 60; // 15 minutos
+
+// Selección activa en el Triaje
+let selectedModalidad = 'TELEMEDICINA';
+let selectedHorario = 'INMEDIATA';
+let selectedPrecio = 15000;
+
+// Grabación de Audio para Dictado SOAP (Veterinario)
 let mediaRecorder = null;
 let audioChunks = [];
 let recordingTimerInterval = null;
@@ -17,190 +25,259 @@ let recordingSeconds = 0;
 let pollingInterval = null;
 let currentMimeType = '';
 
-// ==========================================
-// 2. SWITCH DUAL DE VENTA & TEMA CLÍNICO
-// ==========================================
-const btnModeTutor = document.getElementById('btn-mode-tutor');
+// Reconocimiento de voz para Intent del Cliente
+let isClientMicActive = false;
+let clientSpeechRec = null;
+
+// ========================================================
+// 2. SISTEMA DE TEMAS & BARRA SUPERIOR DE MODO DUAL
+// ========================================================
+const btnModeClient = document.getElementById('btn-mode-client');
 const btnModeVet = document.getElementById('btn-mode-vet');
-const viewTutor = document.getElementById('view-tutor');
+const viewClient = document.getElementById('view-client');
 const viewVet = document.getElementById('view-vet');
 const btnThemeToggle = document.getElementById('btn-theme-toggle');
 const themeToggleIcon = document.getElementById('theme-toggle-icon');
 
-// Configuración inicial de Tema (Clinical Light por defecto)
-const savedTheme = localStorage.getItem('covet-theme') || 'theme-light';
-document.body.className = savedTheme;
-updateThemeIcon(savedTheme);
-
-btnThemeToggle.addEventListener('click', () => {
-  const isLight = document.body.classList.contains('theme-light');
-  const newTheme = isLight ? 'theme-dark' : 'theme-light';
-  document.body.className = newTheme;
-  localStorage.setItem('covet-theme', newTheme);
-  updateThemeIcon(newTheme);
-});
+// Configuración inicial de tema para veterinario
+let savedVetTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
 
 function updateThemeIcon(theme) {
-  themeToggleIcon.textContent = theme === 'theme-light' ? '🌙' : '☀️';
+  if (themeToggleIcon) {
+    themeToggleIcon.textContent = theme === 'clinical-dark' ? '☀️' : '🌙';
+  }
 }
 
-// Switch Dual (Cliente vs Veterinario)
-btnModeTutor.addEventListener('click', () => switchMainMode('tutor'));
-btnModeVet.addEventListener('click', () => switchMainMode('vet'));
+// Alternador de tema (Solo operativo y visible en Modo Veterinario)
+if (btnThemeToggle) {
+  btnThemeToggle.addEventListener('click', () => {
+    const currentTheme = document.body.getAttribute('data-theme') || 'clinical-light';
+    const newTheme = currentTheme === 'clinical-light' ? 'clinical-dark' : 'clinical-light';
+    
+    document.body.setAttribute('data-theme', newTheme);
+    document.body.className = newTheme === 'clinical-dark' ? 'theme-dark' : 'theme-light';
+    localStorage.setItem('covet-vet-theme', newTheme);
+    updateThemeIcon(newTheme);
+  });
+}
 
+// Selector de Modo Principal (Cliente vs Veterinario)
 function switchMainMode(mode) {
-  if (mode === 'tutor') {
-    btnModeTutor.classList.add('active');
-    btnModeTutor.setAttribute('aria-selected', 'true');
+  if (mode === 'client') {
+    // 1. UI Switch Buttons
+    btnModeClient.classList.add('active');
+    btnModeClient.setAttribute('aria-selected', 'true');
     btnModeVet.classList.remove('active');
     btnModeVet.setAttribute('aria-selected', 'false');
-    viewTutor.classList.remove('hidden');
+
+    // 2. Vistas
+    viewClient.classList.remove('hidden');
+    viewClient.classList.add('active');
     viewVet.classList.add('hidden');
+    viewVet.classList.remove('active');
+
+    // 3. Regla 1: Forzar data-theme="clinical-light" (blanco médico impecable)
+    document.body.setAttribute('data-active-view', 'client');
+    document.body.setAttribute('data-theme', 'clinical-light');
+    document.body.className = 'theme-light';
+
+    // 4. Actualizar URL sin recargar
+    try {
+      window.history.replaceState({}, '', '?view=client');
+    } catch (_) {}
+
   } else {
+    // Modo Veterinario
     btnModeVet.classList.add('active');
     btnModeVet.setAttribute('aria-selected', 'true');
-    btnModeTutor.classList.remove('active');
-    btnModeTutor.setAttribute('aria-selected', 'false');
+    btnModeClient.classList.remove('active');
+    btnModeClient.setAttribute('aria-selected', 'false');
+
     viewVet.classList.remove('hidden');
-    viewTutor.classList.add('hidden');
-    // Al entrar al modo veterinario, refrescar la agenda con los datos más recientes
+    viewVet.classList.add('active');
+    viewClient.classList.add('hidden');
+    viewClient.classList.remove('active');
+
+    // Restaurar tema veterinario (Claro u Oscuro según preferencia)
+    document.body.setAttribute('data-active-view', 'vet');
+    savedVetTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
+    document.body.setAttribute('data-theme', savedVetTheme);
+    document.body.className = savedVetTheme === 'clinical-dark' ? 'theme-dark' : 'theme-light';
+    updateThemeIcon(savedVetTheme);
+
+    // Actualizar URL sin recargar
+    try {
+      window.history.replaceState({}, '', '?view=vet');
+    } catch (_) {}
+
+    // Sincronización en vivo con la Agenda en PostgreSQL
     loadAppointmentsData();
   }
 }
 
-// ==========================================
-// 3. VISTA TUTOR / CLIENTE: TRIAJE & PRIMEROS AUXILIOS
-// ==========================================
-const tutorSymptomsInput = document.getElementById('tutor-symptoms-input');
-const btnVoiceIntent = document.getElementById('btn-voice-intent');
-const voiceIntentLabel = document.getElementById('voice-intent-label');
-const symptomChips = document.querySelectorAll('.symptom-chip');
-const tutorTriageForm = document.getElementById('tutor-triage-form');
-const tutorPetName = document.getElementById('tutor-pet-name');
-const tutorSpecies = document.getElementById('tutor-species');
-const tutorPhone = document.getElementById('tutor-phone');
-const tutorName = document.getElementById('tutor-name');
-const tutorServicePref = document.getElementById('tutor-service-pref');
+btnModeClient.addEventListener('click', () => switchMainMode('client'));
+btnModeVet.addEventListener('click', () => switchMainMode('vet'));
 
-const tutorIntakeCard = document.getElementById('tutor-intake-card');
-const tutorTriageLoading = document.getElementById('tutor-triage-loading');
-const tutorTriageResult = document.getElementById('tutor-triage-result');
+// Detección de Parámetro URL (?view=vet o ?view=client)
+const initialUrlParams = new URLSearchParams(window.location.search);
+const initialView = initialUrlParams.get('view') === 'vet' ? 'vet' : 'client';
+switchMainMode(initialView);
 
-const triageStatusBanner = document.getElementById('triage-status-banner');
-const triageLevelBadge = document.getElementById('triage-level-badge');
-const triageDiagTitle = document.getElementById('triage-diag-title');
-const triageServiceRecommendation = document.getElementById('triage-service-recommendation');
-const triageFirstAidBody = document.getElementById('triage-first-aid-body');
 
-const holdTimerText = document.getElementById('hold-timer-text');
-const holdPetName = document.getElementById('hold-pet-name');
-const holdModality = document.getElementById('hold-modality');
-const holdTimeSlot = document.getElementById('hold-time-slot');
-const holdPrice = document.getElementById('hold-price');
-const btnConfirmPayment = document.getElementById('btn-confirm-payment');
-const btnPayLabel = document.getElementById('btn-pay-label');
+// ========================================================
+// 3. VISTA TUTOR: MICRO-APP DE INTENCIÓN (#view-client)
+// ========================================================
 
-const btnSlotAssigned = document.getElementById('btn-slot-assigned');
-const btnSlotMorning = document.getElementById('btn-slot-morning');
-const btnSlotAfternoon = document.getElementById('btn-slot-afternoon');
+// Elementos del DOM de la Vista Cliente
+const clientIntentHero = document.getElementById('client-intent-hero');
+const btnCovetMic = document.getElementById('btn-covet-mic');
+const micStatusLabel = document.getElementById('mic-status-label');
+const clientIntentInput = document.getElementById('client-intent-input');
+const btnClientSend = document.getElementById('btn-client-send');
+const demoChips = document.querySelectorAll('.intent-chip');
 
-const modalPaymentSuccess = document.getElementById('modal-payment-success');
-const btnModalSwitchToVet = document.getElementById('btn-modal-switch-to-vet');
-const btnModalResetTriage = document.getElementById('btn-modal-reset-triage');
+const clientEvaluatingCard = document.getElementById('client-evaluating-card');
+const clientTriageStage = document.getElementById('client-triage-stage');
 
-// Chips de Síntomas Frecuentes
-symptomChips.forEach(chip => {
-  chip.addEventListener('click', () => {
-    tutorSymptomsInput.value = chip.getAttribute('data-text');
-    tutorSymptomsInput.focus();
-  });
-});
+const triageHeaderBanner = document.getElementById('triage-header-banner');
+const triageUrgencyBadge = document.getElementById('triage-urgency-badge');
+const triageSpeciesTag = document.getElementById('triage-species-tag');
+const triageMotivoTitle = document.getElementById('triage-motivo-title');
+const triageRecommendationText = document.getElementById('triage-recommendation-text');
 
-// Grabación de voz rápida para síntomas del tutor (Web Speech API o MediaRecorder)
-let isIntentRecording = false;
-let intentSpeechRec = null;
+const triageExecutionForm = document.getElementById('triage-execution-form');
+const clientTutorPhone = document.getElementById('client-tutor-phone');
+const clientTutorName = document.getElementById('client-tutor-name');
+const clientPetName = document.getElementById('client-pet-name');
+const dynamicQuestionsList = document.getElementById('dynamic-questions-list');
+const hybridScheduleContainer = document.getElementById('hybrid-schedule-container');
+const btnBlockSlot = document.getElementById('btn-block-slot');
+const btnBlockSlotLabel = document.getElementById('btn-block-slot-label');
 
+const clientHoldStage = document.getElementById('client-hold-stage');
+const patientRecognizedBanner = document.getElementById('patient-recognized-banner');
+const patientRecognizedTitle = document.getElementById('patient-recognized-title');
+const patientRecognizedText = document.getElementById('patient-recognized-text');
+const holdCountdownDigits = document.getElementById('hold-countdown-digits');
+const holdSummaryPet = document.getElementById('hold-summary-pet');
+const holdSummaryModality = document.getElementById('hold-summary-modality');
+const holdSummarySchedule = document.getElementById('hold-summary-schedule');
+const holdSummaryPrice = document.getElementById('hold-summary-price');
+const btnCovetConfirm = document.getElementById('btn-covet-confirm');
+const btnConfirmPayText = document.getElementById('btn-confirm-pay-text');
+const externalPayLinkWrap = document.getElementById('external-pay-link-wrap');
+const btnExternalPay = document.getElementById('btn-external-pay');
+
+const clientConfirmedStage = document.getElementById('client-confirmed-stage');
+const confirmedSubtitle = document.getElementById('confirmed-subtitle');
+const protocolTitle = document.getElementById('protocol-title');
+const protocolIndicationsList = document.getElementById('protocol-indications-list');
+const protocolProhibitionsList = document.getElementById('protocol-prohibitions-list');
+const protocolAlertsList = document.getElementById('protocol-alerts-list');
+const protocolTutorMessage = document.getElementById('protocol-tutor-message');
+const btnSwitchVetDemo = document.getElementById('btn-switch-vet-demo');
+const btnNewTriage = document.getElementById('btn-new-triage');
+
+// Web Speech API para el Micrófono del Cliente
 if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  intentSpeechRec = new SpeechRec();
-  intentSpeechRec.lang = 'es-CL';
-  intentSpeechRec.continuous = false;
-  intentSpeechRec.interimResults = false;
+  clientSpeechRec = new SpeechRec();
+  clientSpeechRec.lang = 'es-CL';
+  clientSpeechRec.continuous = false;
+  clientSpeechRec.interimResults = false;
 
-  intentSpeechRec.onresult = (e) => {
+  clientSpeechRec.onresult = (e) => {
     const transcript = e.results[0][0].transcript;
-    tutorSymptomsInput.value = (tutorSymptomsInput.value ? tutorSymptomsInput.value + ' ' : '') + transcript;
+    clientIntentInput.value = (clientIntentInput.value ? clientIntentInput.value + ' ' : '') + transcript;
+    clientIntentInput.focus();
   };
 
-  intentSpeechRec.onend = () => {
-    isIntentRecording = false;
-    btnVoiceIntent.classList.remove('recording');
-    voiceIntentLabel.textContent = 'Hablar';
+  clientSpeechRec.onend = () => {
+    isClientMicActive = false;
+    btnCovetMic.classList.remove('recording');
+    micStatusLabel.textContent = 'Toca el micrófono para hablar';
+    // Si capturó texto, podemos enviar automáticamente tras breve confirmación
+    if (clientIntentInput.value.trim().length > 5) {
+      setTimeout(() => {
+        submitClientIntent(clientIntentInput.value.trim());
+      }, 500);
+    }
   };
 
-  intentSpeechRec.onerror = () => {
-    isIntentRecording = false;
-    btnVoiceIntent.classList.remove('recording');
-    voiceIntentLabel.textContent = 'Hablar';
+  clientSpeechRec.onerror = (e) => {
+    console.warn('Speech recognition error:', e);
+    isClientMicActive = false;
+    btnCovetMic.classList.remove('recording');
+    micStatusLabel.textContent = 'Toca el micrófono para hablar';
   };
 }
 
-btnVoiceIntent.addEventListener('click', (e) => {
-  e.preventDefault();
-  if (!intentSpeechRec) {
-    showToast('Dictado por voz directo no disponible en este navegador. Escribe en el cuadro de texto.', 'info');
+btnCovetMic.addEventListener('click', () => {
+  if (!clientSpeechRec) {
+    showToast('Dictado por voz no soportado en este navegador. Escribe en el cuadro de texto.', 'info');
+    clientIntentInput.focus();
     return;
   }
 
-  if (!isIntentRecording) {
+  if (!isClientMicActive) {
     try {
-      intentSpeechRec.start();
-      isIntentRecording = true;
-      btnVoiceIntent.classList.add('recording');
-      voiceIntentLabel.textContent = 'Escuchando...';
+      clientSpeechRec.start();
+      isClientMicActive = true;
+      btnCovetMic.classList.add('recording');
+      micStatusLabel.textContent = '🔴 Escuchando síntomas... habla con naturalidad';
     } catch (err) {
-      console.warn('Error iniciando SpeechRecognition:', err);
+      console.warn('Error al iniciar micrófono:', err);
     }
   } else {
-    intentSpeechRec.stop();
+    clientSpeechRec.stop();
   }
 });
 
-// Envío del Formulario de Triaje
-tutorTriageForm.addEventListener('submit', async (e) => {
-  e.preventDefault();
+// Chips Clickeables de Ejemplo para Demos de Venta
+demoChips.forEach(chip => {
+  chip.addEventListener('click', () => {
+    const sampleText = chip.getAttribute('data-intent');
+    clientIntentInput.value = sampleText;
+    submitClientIntent(sampleText);
+  });
+});
 
-  const sintomas = tutorSymptomsInput.value.trim();
-  if (!sintomas) {
-    showToast('Por favor describe los síntomas de tu mascota para evaluar el triaje.', 'error');
-    tutorSymptomsInput.focus();
+// Enviar con botón o tecla Enter
+btnClientSend.addEventListener('click', () => {
+  const text = clientIntentInput.value.trim();
+  if (text) submitClientIntent(text);
+});
+
+clientIntentInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const text = clientIntentInput.value.trim();
+    if (text) submitClientIntent(text);
+  }
+});
+
+// Función Principal: Envío de Intención a POST /api/v1/covet/client-intent
+async function submitClientIntent(symptomsText) {
+  if (!symptomsText || symptomsText.trim().length === 0) {
+    showToast('Por favor describe los síntomas de tu mascota.', 'error');
+    clientIntentInput.focus();
     return;
   }
 
-  // Normalización WhatsApp (+569...)
-  let rawPhone = tutorPhone.value.trim().replace(/\s+/g, '');
-  if (/^9\d{8}$/.test(rawPhone)) rawPhone = `+56${rawPhone}`;
-  else if (/^569\d{8}$/.test(rawPhone)) rawPhone = `+${rawPhone}`;
-
-  const triagePayload = {
-    tutor_nombre: tutorName.value.trim(),
-    tutor_telefono: rawPhone,
-    paciente_nombre: tutorPetName.value.trim(),
-    especie: tutorSpecies.value,
-    sintomas_o_motivo: sintomas,
-    preferencia_atencion: tutorServicePref.value,
-    preferencia_horario: 'LO_ANTES_POSIBLE'
-  };
-
-  // Mostrar Loading
-  tutorIntakeCard.classList.add('hidden');
-  tutorTriageLoading.classList.remove('hidden');
+  // 1. Transición Visual: Mostrar Animación Bio Indigo
+  clientIntentHero.classList.add('hidden');
+  clientEvaluatingCard.classList.remove('hidden');
+  clientTriageStage.classList.add('hidden');
+  clientHoldStage.classList.add('hidden');
+  clientConfirmedStage.classList.add('hidden');
 
   try {
-    const res = await fetch(`${API_BASE}/api/v1/covet/triage`, {
+    const formData = new FormData();
+    formData.append('texto', symptomsText);
+
+    const res = await fetch(`${API_BASE}/api/v1/covet/client-intent`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(triagePayload)
+      body: formData
     });
 
     if (!res.ok) {
@@ -209,70 +286,318 @@ tutorTriageForm.addEventListener('submit', async (e) => {
     }
 
     const data = await res.json();
-    activeTriageCitaId = data.cita_id;
+    activeTriageData = data;
 
-    // Renderizar Resultados
-    renderTriageResult(data);
-    tutorTriageLoading.classList.add('hidden');
-    tutorTriageResult.classList.remove('hidden');
+    // 2. Renderizar Pantalla Dinámica de Triaje
+    renderTriageStage(data);
+
+    clientEvaluatingCard.classList.add('hidden');
+    clientTriageStage.classList.remove('hidden');
 
   } catch (err) {
-    console.error('Error al evaluar triaje:', err);
-    showToast(`Error al evaluar triaje: ${err.message}`, 'error');
-    tutorTriageLoading.classList.add('hidden');
-    tutorIntakeCard.classList.remove('hidden');
+    console.error('Error al evaluar intención clínica:', err);
+    showToast(`Error al evaluar síntomas: ${err.message}`, 'error');
+    clientEvaluatingCard.classList.add('hidden');
+    clientIntentHero.classList.remove('hidden');
+  }
+}
+
+// Renderizado de la Pantalla Dinámica de Triaje
+function renderTriageStage(data) {
+  const urgency = data.urgency_level || 'LOW';
+  
+  // a) Cabecera de Triaje Semántica
+  triageHeaderBanner.className = 'glass-panel triage-header-banner';
+  triageUrgencyBadge.className = 'triage-badge-pill';
+
+  if (urgency === 'HIGH') {
+    triageHeaderBanner.classList.add('urgent-high');
+    triageUrgencyBadge.classList.add('urgent-high');
+    triageUrgencyBadge.textContent = data.urgency_badge || '🚨 URGENCIA ALTA — Atención Prioritaria';
+  } else if (urgency === 'MEDIUM') {
+    triageHeaderBanner.classList.add('urgent-medium');
+    triageUrgencyBadge.classList.add('urgent-medium');
+    triageUrgencyBadge.textContent = data.urgency_badge || '⚠️ PRIORIDAD MODERADA';
+  } else {
+    triageUrgencyBadge.textContent = data.urgency_badge || 'CONSULTA PREVENTIVA / RUTINA';
+  }
+
+  const species = data.species_detected || 'Canino';
+  const speciesEmoji = species.toLowerCase().includes('felin') || species.toLowerCase().includes('gat') ? '🐱' : '🐶';
+  triageSpeciesTag.textContent = `${speciesEmoji} ${species}`;
+  triageMotivoTitle.textContent = data.motivo_resumido || 'Consulta Clínica';
+  triageRecommendationText.textContent = data.first_aid_preview || 'Nuestro Agente Clínico ha estructurado el protocolo de atención para tu mascota.';
+
+  // b) Inyección Dinámica de Preguntas Clínicas de Claude
+  dynamicQuestionsList.innerHTML = '';
+  const questions = data.dynamic_questions || [
+    '¿Hace cuánto tiempo comenzaron los síntomas?',
+    '¿Ha recibido medicamentos o tiene antecedentes médicos?',
+    '¿Mantiene apetito y consumo de agua normal?'
+  ];
+
+  questions.forEach((q, idx) => {
+    const qDiv = document.createElement('div');
+    qDiv.className = 'dynamic-question-item';
+    qDiv.innerHTML = `
+      <label for="dyn-q-${idx}"><strong>${idx + 1}.</strong> ${escapeHtml(q)}</label>
+      <input type="text" id="dyn-q-${idx}" name="question_${idx}" required class="clinical-input" placeholder="Tu respuesta...">
+    `;
+    dynamicQuestionsList.appendChild(qDiv);
+  });
+
+  // c) Renderizar Selector Híbrido de Agenda (Opción 3C)
+  renderHybridScheduleSelector(data);
+}
+
+// Selector Híbrido de Agenda según Urgencia (Opción 3C)
+function renderHybridScheduleSelector(data) {
+  const urgency = data.urgency_level || 'LOW';
+  const pricing = data.pricing || {
+    telemedicina: 15000,
+    domicilio_urgencia: 35000,
+    domicilio_programado: 25000
+  };
+
+  hybridScheduleContainer.innerHTML = '';
+
+  if (urgency === 'HIGH') {
+    // Caso de Urgencia HIGH: 2 Tarjetas Destacadas
+    selectedModalidad = 'TELEMEDICINA';
+    selectedHorario = 'INMEDIATA';
+    selectedPrecio = pricing.telemedicina || 15000;
+
+    hybridScheduleContainer.innerHTML = `
+      <div class="urgent-schedule-grid">
+        <div class="urgent-option-card featured selected" data-modalidad="TELEMEDICINA" data-horario="INMEDIATA" data-precio="${pricing.telemedicina}">
+          <span class="card-top-badge">⚡ MÁXIMA PRIORIDAD</span>
+          <h4 class="urgent-card-title">Telemedicina de Urgencia Inmediata</h4>
+          <p class="urgent-card-desc">Conexión con médico veterinario en menos de 10 minutos para contención, triaje visual y primeros auxilios asistidos.</p>
+          <div class="urgent-card-price">$${Number(pricing.telemedicina).toLocaleString('es-CL')} CLP</div>
+        </div>
+
+        <div class="urgent-option-card" data-modalidad="DOMICILIO" data-horario="PRIMER_CUPO_HOY" data-precio="${pricing.domicilio_urgencia}">
+          <span class="card-top-badge">🚑 ATENCIÓN EN TERRENO</span>
+          <h4 class="urgent-card-title">Primer cupo de Visita de Urgencia Hoy</h4>
+          <p class="urgent-card-desc">Desplazamiento médico prioritario a tu domicilio con equipamiento de soporte clínico.</p>
+          <div class="urgent-card-price">$${Number(pricing.domicilio_urgencia).toLocaleString('es-CL')} CLP</div>
+        </div>
+      </div>
+    `;
+
+    // Listeners para las tarjetas urgentes
+    const cards = hybridScheduleContainer.querySelectorAll('.urgent-option-card');
+    cards.forEach(card => {
+      card.addEventListener('click', () => {
+        cards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedModalidad = card.getAttribute('data-modalidad');
+        selectedHorario = card.getAttribute('data-horario');
+        selectedPrecio = parseInt(card.getAttribute('data-precio'), 10);
+      });
+    });
+
+  } else {
+    // Caso MEDIUM o LOW: 3 Horas Exactas + Botón Desplegable de Franjas Domicilio
+    const slots = (data.suggested_slots && data.suggested_slots.length > 0)
+      ? data.suggested_slots
+      : ['11:00', '15:30', '18:00'];
+
+    selectedModalidad = 'DOMICILIO';
+    selectedHorario = slots[0];
+    selectedPrecio = pricing.domicilio_programado || 25000;
+
+    hybridScheduleContainer.innerHTML = `
+      <div class="standard-schedule-wrap">
+        <div class="exact-slots-row">
+          <span class="exact-slots-label">Cupos de hora exacta sugeridos para hoy:</span>
+          ${slots.map((slot, i) => `
+            <button type="button" class="btn-exact-slot ${i === 0 ? 'selected' : ''}" data-slot="${slot}">
+              🕒 ${slot} hrs
+            </button>
+          `).join('')}
+        </div>
+
+        <div class="home-window-toggle-box">
+          <button type="button" class="btn-toggle-home-window" id="btn-toggle-home-window">
+            <span>🚗 ¿Atención a domicilio? Prefiero coordinar ventana de horario</span>
+            <span id="window-toggle-arrow">▼</span>
+          </button>
+          <div class="home-windows-subgrid hidden" id="home-windows-subgrid">
+            <button type="button" class="btn-window-slot" data-slot="VENTANA_MANANA_10_13" data-label="Mañana (10:00 - 13:00 hrs)">
+              <span class="window-name">🌅 Ventana Mañana (10:00 – 13:00)</span>
+              <span class="window-price">$${Number(pricing.domicilio_programado).toLocaleString('es-CL')} CLP</span>
+            </button>
+            <button type="button" class="btn-window-slot" data-slot="VENTANA_TARDE_15_19" data-label="Tarde (15:00 - 19:00 hrs)">
+              <span class="window-name">🌇 Ventana Tarde (15:00 – 19:00)</span>
+              <span class="window-price">$${Number(pricing.domicilio_programado).toLocaleString('es-CL')} CLP</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Listeners para slots exactos
+    const exactSlotBtns = hybridScheduleContainer.querySelectorAll('.btn-exact-slot');
+    const windowSlotBtns = hybridScheduleContainer.querySelectorAll('.btn-window-slot');
+    const btnToggle = hybridScheduleContainer.querySelector('#btn-toggle-home-window');
+    const subgrid = hybridScheduleContainer.querySelector('#home-windows-subgrid');
+    const arrow = hybridScheduleContainer.querySelector('#window-toggle-arrow');
+
+    exactSlotBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        exactSlotBtns.forEach(b => b.classList.remove('selected'));
+        windowSlotBtns.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedModalidad = 'DOMICILIO';
+        selectedHorario = btn.getAttribute('data-slot');
+      });
+    });
+
+    // Toggle de Ventanas
+    btnToggle.addEventListener('click', () => {
+      const isClosed = subgrid.classList.contains('hidden');
+      if (isClosed) {
+        subgrid.classList.remove('hidden');
+        arrow.textContent = '▲';
+      } else {
+        subgrid.classList.add('hidden');
+        arrow.textContent = '▼';
+      }
+    });
+
+    windowSlotBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        exactSlotBtns.forEach(b => b.classList.remove('selected'));
+        windowSlotBtns.forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedModalidad = 'DOMICILIO';
+        selectedHorario = btn.getAttribute('data-label');
+      });
+    });
+  }
+}
+
+// Envío del Formulario de Triaje a POST /api/v1/covet/triage-execute
+triageExecutionForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const phone = clientTutorPhone.value.trim();
+  const tutorName = clientTutorName.value.trim();
+  const petName = clientPetName.value.trim();
+
+  if (!phone || !tutorName || !petName) {
+    showToast('Por favor completa todos los datos de contacto.', 'error');
+    return;
+  }
+
+  // Normalizar Teléfono a Formato Internacional (+569...)
+  let cleanPhone = phone.replace(/\s+/g, '');
+  if (/^9\d{8}$/.test(cleanPhone)) cleanPhone = `+56${cleanPhone}`;
+  else if (/^569\d{8}$/.test(cleanPhone)) cleanPhone = `+${cleanPhone}`;
+
+  // Recolectar Respuestas Dinámicas
+  const answersMap = {};
+  const questionInputs = dynamicQuestionsList.querySelectorAll('input');
+  questionInputs.forEach((inp, idx) => {
+    const qLabel = dynamicQuestionsList.querySelector(`label[for="dyn-q-${idx}"]`);
+    const qText = qLabel ? qLabel.textContent : `Pregunta ${idx + 1}`;
+    answersMap[qText] = inp.value.trim();
+  });
+
+  const payload = {
+    tutor_telefono: cleanPhone,
+    tutor_nombre: tutorName,
+    paciente_nombre: petName,
+    especie: (activeTriageData && activeTriageData.species_detected) || 'Canino',
+    respuestas_triaje: answersMap,
+    modalidad: selectedModalidad,
+    seleccion_horaria: selectedHorario,
+    urgency_level: (activeTriageData && activeTriageData.urgency_level) || 'LOW',
+    motivo_resumido: (activeTriageData && activeTriageData.motivo_resumido) || 'Consulta clínica',
+    first_aid_protocol_id: (activeTriageData && activeTriageData.first_aid_protocol_id) || ''
+  };
+
+  btnBlockSlot.disabled = true;
+  btnBlockSlotLabel.textContent = 'Bloqueando cupo con Agente CoVet...';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/triage-execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const result = await res.json();
+    activeTriageCitaId = result.cita_id;
+
+    // Mostrar Pantalla de Bloqueo Temporal (HOLD_15_MIN)
+    renderHoldStage(result, payload);
+
+    clientTriageStage.classList.add('hidden');
+    clientHoldStage.classList.remove('hidden');
+
+  } catch (err) {
+    console.error('Error al ejecutar triaje:', err);
+    showToast(`Error al bloquear cupo: ${err.message}`, 'error');
+  } finally {
+    btnBlockSlot.disabled = false;
+    btnBlockSlotLabel.textContent = 'Bloquear Cupo Temporal (15 min) & Continuar';
   }
 });
 
-function renderTriageResult(data) {
-  // 1. Semáforo
-  triageStatusBanner.className = 'triage-status-banner';
-  if (data.triaje_nivel_color === 'ROJO') {
-    triageStatusBanner.classList.add('red');
-    triageLevelBadge.textContent = '🚨 URGENCIA CRÍTICA (RIESGO VITAL)';
-  } else if (data.triaje_nivel_color === 'AMARILLO') {
-    triageStatusBanner.classList.add('yellow');
-    triageLevelBadge.textContent = '⚠️ ALTA PRIORIDAD CLÍNICA';
+// Renderizar Estado 4: Bloqueo Temporal (HOLD_15_MIN) & Aviso de Paciente Recurrente
+function renderHoldStage(result, payload) {
+  // 1. Banner de Paciente Recurrente si el backend lo reconoció
+  if (result.paciente_reconocido) {
+    patientRecognizedBanner.classList.remove('hidden');
+    patientRecognizedTitle.textContent = `✨ ¡Hola de nuevo, ${payload.tutor_nombre}!`;
+    patientRecognizedText.textContent = `El Agente CoVet encontró el historial clínico previo de ${payload.paciente_nombre} en la base de datos y ya lo adjuntó a la ficha del veterinario.`;
   } else {
-    triageStatusBanner.classList.add('green');
-    triageLevelBadge.textContent = '✅ PREVENTIVO / CONTROL DE RUTINA';
+    patientRecognizedBanner.classList.add('hidden');
   }
 
-  triageDiagTitle.textContent = data.triaje_diagnostico_tentativo;
-  triageServiceRecommendation.textContent = `Modalidad recomendada: ${data.tipo_atencion_recomendada} (Atención sugerida en menos de 2 horas)`;
+  // 2. Resumen de la Cita Bloqueada
+  holdSummaryPet.textContent = `${payload.paciente_nombre} (${payload.especie})`;
+  holdSummaryModality.textContent = payload.modalidad === 'TELEMEDICINA' ? '⚡ Telemedicina Inmediata' : '🚗 Visita a Domicilio';
+  holdSummarySchedule.textContent = payload.seleccion_horaria;
 
-  // 2. Primeros Auxilios
-  triageFirstAidBody.textContent = data.protocolo_primeros_auxilios;
+  const finalAmount = result.monto_clp || selectedPrecio;
+  const formattedPrice = `$${Number(finalAmount).toLocaleString('es-CL')} CLP`;
+  holdSummaryPrice.textContent = formattedPrice;
+  btnConfirmPayText.textContent = `Pagar y Confirmar Cupo (${formattedPrice})`;
 
-  // 3. Reserva y Datos del Bloque
-  holdPetName.textContent = tutorPetName.value || 'Tu mascota';
-  holdModality.textContent = data.tipo_atencion_recomendada;
+  // 3. Link de Pago Externo (si fue configurado)
+  if (result.payment_link) {
+    externalPayLinkWrap.classList.remove('hidden');
+    btnExternalPay.href = result.payment_link;
+  } else {
+    externalPayLinkWrap.classList.add('hidden');
+  }
 
-  const dateObj = new Date(data.bloque_asignado);
-  holdTimeSlot.textContent = dateObj.toLocaleString('es-CL', {
-    weekday: 'short', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-  });
-
-  const formattedPrice = Number(data.monto_sugerido || 15000).toLocaleString('es-CL');
-  holdPrice.textContent = `$${formattedPrice} CLP`;
-  btnPayLabel.textContent = `Pagar y Confirmar Cupo ($${formattedPrice} CLP)`;
-
-  // Iniciar temporizador de 15 minutos
-  startHoldCountdown();
+  // 4. Iniciar Contador Regresivo de 15 Minutos
+  startHoldCountdownTimer(result.expira_en_segundos || 900);
 }
 
-function startHoldCountdown() {
+// Contador Regresivo en Vivo (15:00 min)
+function startHoldCountdownTimer(totalSeconds) {
   clearInterval(holdTimerInterval);
-  holdSecondsLeft = 15 * 60;
+  holdSecondsLeft = totalSeconds;
   updateHoldTimerUI();
 
   holdTimerInterval = setInterval(() => {
     holdSecondsLeft--;
     if (holdSecondsLeft <= 0) {
       clearInterval(holdTimerInterval);
-      holdTimerText.textContent = '00:00 (Expirado)';
-      btnConfirmPayment.disabled = true;
-      btnPayLabel.textContent = 'Cupo Expirado — Solicita Nuevo Triaje';
+      holdCountdownDigits.textContent = '00:00 (Expirado)';
+      btnCovetConfirm.disabled = true;
+      btnConfirmPayText.textContent = 'Cupo Expirado — Vuelve a Triar';
+      showToast('El bloqueo de 15 minutos ha expirado.', 'error');
       return;
     }
     updateHoldTimerUI();
@@ -282,73 +607,110 @@ function startHoldCountdown() {
 function updateHoldTimerUI() {
   const m = Math.floor(holdSecondsLeft / 60).toString().padStart(2, '0');
   const s = (holdSecondsLeft % 60).toString().padStart(2, '0');
-  holdTimerText.textContent = `${m}:${s}`;
+  holdCountdownDigits.textContent = `${m}:${s}`;
 }
 
-// Opciones Híbridas de Bloque
-[btnSlotAssigned, btnSlotMorning, btnSlotAfternoon].forEach(btn => {
-  btn.addEventListener('click', () => {
-    [btnSlotAssigned, btnSlotMorning, btnSlotAfternoon].forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    if (btn === btnSlotMorning) {
-      holdTimeSlot.textContent = 'Mañana (Ventana 10:00 - 13:00 hrs)';
-    } else if (btn === btnSlotAfternoon) {
-      holdTimeSlot.textContent = 'Tarde (Ventana 15:00 - 19:00 hrs)';
-    }
-  });
-});
-
 // Botón de Pago / Confirmación 1-Clic
-btnConfirmPayment.addEventListener('click', async () => {
+btnCovetConfirm.addEventListener('click', async () => {
   if (!activeTriageCitaId) return;
 
-  btnConfirmPayment.disabled = true;
-  btnConfirmPayment.innerHTML = `<span class="spinner" style="width:16px;height:16px;margin:0;display:inline-block;vertical-align:middle;"></span> Procesando confirmación...`;
+  btnCovetConfirm.disabled = true;
+  btnConfirmPayText.textContent = 'Confirmando reserva en PostgreSQL...';
 
   try {
-    const res = await fetch(`${API_BASE}/api/v1/covet/appointments/${activeTriageCitaId}/confirm-payment`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        metodo_pago: 'DEMO_SIMULATION',
-        monto: 15000.0
-      })
+    const res = await fetch(`${API_BASE}/api/v1/covet/citas/${activeTriageCitaId}/confirm-payment`, {
+      method: 'POST'
     });
 
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
     const data = await res.json();
 
+    // Detener Temporizador
     clearInterval(holdTimerInterval);
-    modalPaymentSuccess.classList.remove('hidden');
+
+    // Renderizar Estado 5: Confirmado & Protocolo de Primeros Auxilios Desbloqueado
+    renderConfirmedStage(data);
+
+    clientHoldStage.classList.add('hidden');
+    clientConfirmedStage.classList.remove('hidden');
 
   } catch (err) {
     console.error('Error al confirmar pago:', err);
-    showToast(`Error al confirmar cita: ${err.message}`, 'error');
+    showToast(`Error al confirmar reserva: ${err.message}`, 'error');
   } finally {
-    btnConfirmPayment.disabled = false;
-    btnConfirmPayment.innerHTML = `<span class="pay-icon">💳</span> <span id="btn-pay-label">Pagar y Confirmar Cupo</span>`;
+    btnCovetConfirm.disabled = false;
   }
 });
 
-// Acciones del Modal de Pago
-btnModalSwitchToVet.addEventListener('click', () => {
-  modalPaymentSuccess.classList.add('hidden');
+// Renderizado de Primeros Auxilios Pre-Aprobados (Estado 5)
+function renderConfirmedStage(data) {
+  const guide = data.first_aid_guide || {};
+  protocolTitle.textContent = guide.titulo || 'Protocolo Clínico de Contención y Primeros Auxilios';
+
+  // Indicaciones
+  protocolIndicationsList.innerHTML = '';
+  (guide.indicaciones || [
+    'Mantén a la mascota en un lugar tranquilo, tibio y con ventilación.',
+    'No suministres agua ni alimentos a la fuerza.',
+    'Ten a mano su carnet de vacunación y prepara su transportadora.'
+  ]).forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    protocolIndicationsList.appendChild(li);
+  });
+
+  // Prohibiciones
+  protocolProhibitionsList.innerHTML = '';
+  (guide.prohibiciones || [
+    'PROHIBIDO administrar medicamentos de humanos (Paracetamol, Ibuprofeno o Aspirina son mortales para perros y gatos).',
+    'No inducir el vómito sin supervisión médica expresa.'
+  ]).forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    protocolProhibitionsList.appendChild(li);
+  });
+
+  // Alertas Rojas
+  protocolAlertsList.innerHTML = '';
+  (guide.alertas || [
+    'Dificultad respiratoria extrema o jadeo con encías moradas/pálidas.',
+    'Pérdida de conciencia, convulsiones o desmayos.',
+    'Distensión abdominal severa o intentos fallidos de vomitar.'
+  ]).forEach(item => {
+    const li = document.createElement('li');
+    li.textContent = item;
+    protocolAlertsList.appendChild(li);
+  });
+
+  // Mensaje al tutor
+  protocolTutorMessage.textContent = guide.mensaje_tutor || 'Tu cita ya está agendada. Nuestro equipo médico está al tanto de tu caso.';
+}
+
+// Botón de Salto al Modo Veterinario en Demo de Venta
+btnSwitchVetDemo.addEventListener('click', () => {
   switchMainMode('vet');
-  document.getElementById('tab-btn-agenda').click();
-  showToast('¡Observa cómo la cita triada ya está en la agenda en tiempo real!', 'success');
+  const tabAgendaBtn = document.getElementById('tab-btn-agenda');
+  if (tabAgendaBtn) tabAgendaBtn.click();
+  showToast('¡Observa cómo la cita triada ya aparece en la agenda veterinaria en tiempo real!', 'success');
 });
 
-btnModalResetTriage.addEventListener('click', () => {
-  modalPaymentSuccess.classList.add('hidden');
-  tutorTriageResult.classList.add('hidden');
-  tutorIntakeCard.classList.remove('hidden');
-  tutorSymptomsInput.value = '';
+// Botón para Realizar Otra Consulta
+btnNewTriage.addEventListener('click', () => {
+  clientConfirmedStage.classList.add('hidden');
+  clientTriageStage.classList.add('hidden');
+  clientHoldStage.classList.add('hidden');
+  clientIntentHero.classList.remove('hidden');
+  clientIntentInput.value = '';
 });
 
 
-// ==========================================
-// 4. MODO VETERINARIO (PANEL CLÍNICO COMPLETO)
-// ==========================================
+// ========================================================
+// 4. MODO VETERINARIO: PANEL CLÍNICO VIBE & VERIFY
+// ========================================================
 const statusDot = document.querySelector('.status-dot');
 const statusText = document.getElementById('backend-status-text');
 const dbStatusText = document.getElementById('db-status-text');
@@ -449,7 +811,7 @@ function switchVibeState(stateName) {
   }
 }
 
-// Grabación de Audio con MediaRecorder API
+// Detección de Códec y MimeType de Audio
 function detectSupportedMimeType() {
   const candidates = [
     'audio/webm;codecs=opus',
@@ -465,10 +827,11 @@ function detectSupportedMimeType() {
   return '';
 }
 
+// Inicio de Grabación de Dictado Clínico
 async function startRecording() {
   try {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      showToast('Tu navegador no soporta grabación de micrófono.', 'error');
+      showToast('Tu navegador no soporta grabación directa de audio.', 'error');
       return;
     }
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -554,7 +917,7 @@ function cancelRecording() {
   showToast('Grabación cancelada.', 'info');
 }
 
-// Subida y Polling de Ficha SOAP
+// Subida a FastAPI y Polling Asíncrono de Tarea SOAP
 async function uploadAudioAndPoll(audioFile) {
   switchVibeState('processing');
   resetProcessingUI();
@@ -562,7 +925,7 @@ async function uploadAudioAndPoll(audioFile) {
   try {
     const formData = new FormData();
     formData.append('file', audioFile);
-    if (selectCitaContexto.value) {
+    if (selectCitaContexto && selectCitaContexto.value) {
       formData.append('cita_id', selectCitaContexto.value);
     }
 
@@ -637,19 +1000,19 @@ function resetProcessingUI() {
 }
 
 function setStepActive(stepElem, title, progressPercent) {
-  stepElem.className = 'step-item active';
-  processingStepTitle.textContent = title;
-  processingBarFill.style.width = `${progressPercent}%`;
+  if (stepElem) stepElem.className = 'step-item active';
+  if (processingStepTitle) processingStepTitle.textContent = title;
+  if (processingBarFill) processingBarFill.style.width = `${progressPercent}%`;
 }
 
 function setStepDone(stepElem) {
-  stepElem.className = 'step-item done';
+  if (stepElem) stepElem.className = 'step-item done';
 }
 
 function showProcessingError(msg) {
-  processingErrorBanner.classList.remove('hidden');
-  processingErrorMessage.textContent = msg;
-  processingStepTitle.textContent = 'Procesamiento Detenido';
+  if (processingErrorBanner) processingErrorBanner.classList.remove('hidden');
+  if (processingErrorMessage) processingErrorMessage.textContent = msg;
+  if (processingStepTitle) processingStepTitle.textContent = 'Procesamiento Detenido';
 }
 
 function populateReviewForm(fiche) {
@@ -720,7 +1083,6 @@ formSoapReview.addEventListener('submit', async (e) => {
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const resData = await res.json();
     showToast('Ficha clínica confirmada y sincronizada en PostgreSQL.', 'success');
     switchVibeState('idle');
     loadAppointmentsData();
@@ -742,9 +1104,10 @@ btnStartRecord.addEventListener('click', startRecording);
 btnStopRecord.addEventListener('click', stopRecordingAndProcess);
 btnCancelRecord.addEventListener('click', cancelRecording);
 
-// ==========================================
-// 5. AGENDA & CITAS (VISTA VETERINARIO)
-// ==========================================
+
+// ========================================================
+// 5. AGENDA & SINCRONIZACIÓN EN VIVO (REQUERIMIENTO 5)
+// ========================================================
 async function loadAppointmentsData() {
   try {
     const [citasRes, pacientesRes, tutoresRes] = await Promise.all([
@@ -757,19 +1120,21 @@ async function loadAppointmentsData() {
     const pacientes = pacientesRes && pacientesRes.ok ? await pacientesRes.json() : [];
     const tutores = tutoresRes && tutoresRes.ok ? await tutoresRes.json() : [];
 
-    kpiCitas.textContent = citas.length;
-    kpiPacientes.textContent = pacientes.length;
-    kpiTutores.textContent = tutores.length;
-    tabCitasCounter.textContent = citas.length;
+    if (kpiCitas) kpiCitas.textContent = citas.length;
+    if (kpiPacientes) kpiPacientes.textContent = pacientes.length;
+    if (kpiTutores) kpiTutores.textContent = tutores.length;
+    if (tabCitasCounter) tabCitasCounter.textContent = citas.length;
 
     renderAppointmentsList(citas, pacientes);
     populateAppointmentContextSelector(citas, pacientes);
   } catch (err) {
-    console.error('Error cargando citas:', err);
+    console.error('Error cargando citas en agenda:', err);
   }
 }
 
 function renderAppointmentsList(citas, pacientes) {
+  if (!appointmentsContainer) return;
+
   if (!citas || citas.length === 0) {
     appointmentsContainer.innerHTML = `
       <div class="empty-state">
@@ -787,29 +1152,46 @@ function renderAppointmentsList(citas, pacientes) {
     const dateFormatted = new Date(cita.fecha_hora).toLocaleString('es-CL', {
       day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
     });
-    const emoji = paciente.especie === 'Felino' ? '🐱' : paciente.especie === 'Canino' ? '🐶' : '🐾';
+    const emoji = paciente.especie && paciente.especie.toLowerCase().includes('felin') ? '🐱' : '🐶';
 
-    const isHold = cita.estado_cita === 'HOLD_15_MIN';
+    // Estado de Reserva: HOLD_15_MIN vs CONFIRMED
+    const isHold = cita.estado_reserva === 'HOLD_15_MIN' || cita.estado_cita === 'HOLD_15_MIN';
     const statusClass = isHold ? 'hold' : 'confirmed';
-    const statusText = isHold ? '⏳ HOLD 15 MIN' : (cita.pago_estado === 'SIMULATED_PAID' ? '✅ PAGADO & CONFIRMADO' : '✓ CONFIRMADA');
-    const modality = cita.tipo_atencion || 'CLINICA';
+    const statusText = isHold ? '⏳ HOLD 15 MIN' : (cita.pago_estado === 'SIMULATED_PAID' || cita.pago_estado === 'CONFIRMED' ? '✅ PAGADO & CONFIRMADO' : '✓ CONFIRMADA');
+
+    // Badge de Urgencia Semántica
+    const urgency = (cita.nivel_urgencia || 'LOW').toUpperCase();
+    let urgencyBadge = '<span class="cita-status-tag" style="background:rgba(13,148,136,0.12);color:var(--teal-primary);">✅ RUTINA</span>';
+    if (urgency === 'HIGH') {
+      urgencyBadge = '<span class="cita-status-tag" style="background:rgba(225,29,72,0.15);color:var(--vital-rose);font-weight:800;">🚨 URGENCIA ALTA</span>';
+    } else if (urgency === 'MEDIUM') {
+      urgencyBadge = '<span class="cita-status-tag" style="background:rgba(217,119,6,0.15);color:var(--amber-warning);font-weight:700;">⚠️ PRIORITARIO</span>';
+    }
+
+    const modalidad = (cita.modalidad || cita.tipo_atencion || 'DOMICILIO').toUpperCase();
+    const ventana = cita.ventana_horaria ? `• Horario: ${escapeHtml(cita.ventana_horaria)}` : '';
 
     return `
       <div class="appointment-card ${statusClass}">
         <div class="cita-pet">
           <span>${emoji}</span>
-          <span>${escapeHtml(paciente.nombre)}</span>
-          <small style="color:var(--text-dim);font-weight:600;">[${modality}]</small>
+          <strong style="font-size:1.02rem;">${escapeHtml(paciente.nombre)}</strong>
+          <small style="color:var(--text-dim);font-weight:700;">[${modalidad}]</small>
+          ${urgencyBadge}
           <span class="cita-status-tag ${statusClass}">${statusText}</span>
         </div>
-        <div class="cita-motivo">${escapeHtml(cita.motivo)}</div>
-        <div class="cita-time">📅 ${dateFormatted} • Valor: $${Number(cita.monto_pago || 0).toLocaleString('es-CL')} CLP</div>
+        <div class="cita-motivo" style="margin: 0.35rem 0;">${escapeHtml(cita.motivo)}</div>
+        <div class="cita-time" style="font-size:0.82rem;color:var(--text-dim);">
+          📅 ${dateFormatted} ${ventana} • Arancel: $${Number(cita.monto_pago || 0).toLocaleString('es-CL')} CLP
+        </div>
       </div>
     `;
   }).join('');
 }
 
 function populateAppointmentContextSelector(citas, pacientes) {
+  if (!selectCitaContexto) return;
+
   const pacientesMap = new Map();
   pacientes.forEach(p => pacientesMap.set(p.id, p));
 
@@ -818,18 +1200,21 @@ function populateAppointmentContextSelector(citas, pacientes) {
     const paciente = pacientesMap.get(cita.paciente_id);
     const petName = paciente ? paciente.nombre : `Paciente #${cita.paciente_id}`;
     const dateStr = new Date(cita.fecha_hora).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+    const urgency = (cita.nivel_urgencia || 'LOW').toUpperCase();
+    const modalidad = cita.modalidad || 'DOMICILIO';
+
     const opt = document.createElement('option');
     opt.value = cita.id;
-    opt.textContent = `Cita #${cita.id} — ${petName} (${dateStr}: ${cita.motivo.slice(0, 30)})`;
+    opt.textContent = `Cita #${cita.id} [${urgency}] [${modalidad}] — ${petName} (${dateStr}: ${cita.motivo.slice(0, 28)})`;
     selectCitaContexto.appendChild(opt);
   });
 }
 
-// Agendamiento manual rápido en agenda
+// Agendamiento Manual Rápido en Agenda
 if (appointmentForm) {
   appointmentForm.addEventListener('submit', async (e) => {
     e.preventDefault();
-    btnSubmitAppointment.disabled = true;
+    if (btnSubmitAppointment) btnSubmitAppointment.disabled = true;
 
     try {
       const tutorRes = await fetch(`${API_BASE}/api/tutores`, {
@@ -877,21 +1262,26 @@ if (appointmentForm) {
     } catch (err) {
       showToast(err.message, 'error');
     } finally {
-      btnSubmitAppointment.disabled = false;
+      if (btnSubmitAppointment) btnSubmitAppointment.disabled = false;
     }
   });
 }
 
-btnRefresh.addEventListener('click', () => {
-  loadAppointmentsData();
-  checkHealth();
-  showToast('Agenda sincronizada con PostgreSQL', 'info');
-});
+if (btnRefresh) {
+  btnRefresh.addEventListener('click', () => {
+    loadAppointmentsData();
+    checkHealth();
+    showToast('Agenda sincronizada con PostgreSQL', 'info');
+  });
+}
 
-// ==========================================
-// 6. HISTORIAL DE FICHAS (TAB 3)
-// ==========================================
+
+// ========================================================
+// 6. HISTORIAL DE FICHAS (TAB 3 VETERINARIO)
+// ========================================================
 async function loadFichesHistory() {
+  if (!fichesHistoryList) return;
+
   fichesHistoryList.innerHTML = `
     <div class="loading-state">
       <span class="spinner"></span>
@@ -943,9 +1333,10 @@ async function loadFichesHistory() {
 
 if (btnRefreshFiches) btnRefreshFiches.addEventListener('click', loadFichesHistory);
 
-// ==========================================
-// 7. HEALTH CHECK & MONITOREO
-// ==========================================
+
+// ========================================================
+// 7. HEALTH CHECK & MONITOREO DEL VPS HETZNER
+// ========================================================
 async function checkHealth() {
   try {
     const res = await fetch(`${API_BASE}/health`);
@@ -953,22 +1344,23 @@ async function checkHealth() {
     const data = await res.json();
 
     if (data.status === 'healthy') {
-      statusDot.className = 'status-dot active';
-      statusText.textContent = 'Hetzner Online';
-      dbStatusText.textContent = `PostgreSQL 16 OK`;
+      if (statusDot) statusDot.className = 'status-dot active';
+      if (statusText) statusText.textContent = 'Hetzner Online';
+      if (dbStatusText) dbStatusText.textContent = `PostgreSQL 16 OK`;
     } else {
-      statusDot.className = 'status-dot';
-      statusText.textContent = 'Backend Degradado';
-      dbStatusText.textContent = data.database || 'DB Error';
+      if (statusDot) statusDot.className = 'status-dot';
+      if (statusText) statusText.textContent = 'Backend Degradado';
+      if (dbStatusText) dbStatusText.textContent = data.database || 'DB Error';
     }
   } catch (err) {
-    statusDot.className = 'status-dot';
-    statusText.textContent = 'Backend Desconectado';
-    dbStatusText.textContent = 'Sin Conexión';
+    if (statusDot) statusDot.className = 'status-dot';
+    if (statusText) statusText.textContent = 'Backend Desconectado';
+    if (dbStatusText) dbStatusText.textContent = 'Sin Conexión';
   }
 }
 
 function showToast(message, type = 'info') {
+  if (!toastContainer) return;
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
@@ -986,7 +1378,6 @@ function escapeHtml(text) {
   })[m]);
 }
 
-// Inicialización
+// Inicialización de Monitoreo y Carga
 checkHealth();
-loadAppointmentsData();
-setInterval(checkHealth, 20000);
+setInterval(checkHealth, 25000);

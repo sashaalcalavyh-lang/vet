@@ -13,12 +13,12 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
-<body class="theme-light">
+<body class="theme-light" data-theme="clinical-light">
   <div class="app-wrapper">
     <!-- Barra Superior de Control: Switch Dual de Venta + Selector de Tema -->
     <header class="top-control-bar">
       <div class="mode-switch-pill" role="tablist">
-        <button class="mode-btn active" id="btn-mode-tutor" data-mode="tutor" role="tab" aria-selected="true">
+        <button class="mode-btn active" id="btn-mode-client" data-mode="client" role="tab" aria-selected="true">
           <span class="mode-icon">🐾</span>
           <span class="mode-text">Vista Tutor (Cliente)</span>
         </button>
@@ -36,220 +36,262 @@
     </header>
 
     <!-- ======================================================= -->
-    <!-- VISTA 1: MICRO-APP DE CARA AL CLIENTE / TUTOR (TRIAGE)  -->
+    <!-- VISTA 1: MICRO-APP DE INTENCIÓN CLIENTE (#view-client)  -->
     <!-- ======================================================= -->
-    <section class="view-container active" id="view-tutor">
-      <!-- Header Tutor -->
-      <div class="tutor-hero-header">
-        <div class="tutor-brand">
-          <div class="tutor-logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+    <section class="view-container active" id="view-client">
+      <!-- Sello de Confianza Clínica CoVet -->
+      <div class="client-trust-badge-row">
+        <div class="client-trust-badge">
+          <div class="trust-icon-box">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
             </svg>
           </div>
-          <div>
-            <h1 class="tutor-title">CoVet <span class="badge-tag live">Urgencias & Control</span></h1>
-            <p class="tutor-subtitle">Triaje Veterinario con IA & Atención Inmediata en Chile</p>
+          <div class="trust-texts">
+            <span class="trust-title">CoVet Clinical AI</span>
+            <span class="trust-sub">Red de Urgencias & Telemedicina Veterinaria Chile</span>
           </div>
         </div>
-
-        <div class="tutor-live-status">
+        <div class="trust-status-pill">
           <span class="live-dot"></span>
-          <span>Atención Médica Activa • Red Hetzner</span>
+          <span>Médicos de Turno Activos</span>
         </div>
       </div>
 
-      <!-- Pantalla Principal de Consulta del Tutor -->
-      <div class="tutor-intent-container" id="tutor-intake-card">
-        <div class="tutor-card glass-panel">
-          <div class="card-prompt-header">
-            <h2>¿Qué síntomas o emergencia presenta tu mascota?</h2>
-            <p>Describe con tus palabras o dicta por voz. Nuestro Agente Clínico evaluará el riesgo vital y te indicará primeros auxilios inmediatos.</p>
+      <!-- ESTADO 1: LIENZO MINIMALISTA DE INTENCIÓN -->
+      <div class="client-intent-hero" id="client-intent-hero">
+        <div class="glass-panel client-canvas-card">
+          <div class="client-canvas-header">
+            <h1 class="client-main-title">¿Qué le ocurre a tu mascota?</h1>
+            <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el riesgo vital, te dará primeros auxilios y coordinará su atención médica.</p>
           </div>
 
-          <!-- Barra de Intención por Voz o Texto -->
-          <div class="intent-input-wrapper">
-            <div class="intent-input-box">
-              <textarea id="tutor-symptoms-input" rows="3" class="intent-textarea" placeholder="Ej: Mi perro vomitó espuma blanca hace 1 hora, está decaído y tiembla..."></textarea>
-              <button class="btn-voice-intent" id="btn-voice-intent" title="Dictar síntomas por voz">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <!-- Botón Central de Micrófono -->
+          <div class="mic-central-wrapper">
+            <button class="btn-covet-mic" id="btn-covet-mic" title="Presiona para hablar">
+              <div class="mic-wave-ring"></div>
+              <div class="mic-wave-ring outer"></div>
+              <div class="mic-icon-inner">
+                <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
                   <line x1="12" x2="12" y1="19" y2="22"/>
                 </svg>
-                <span id="voice-intent-label">Hablar</span>
-              </button>
-            </div>
-
-            <!-- Chips de Síntomas Frecuentes para Clic Rápido -->
-            <div class="symptom-chips-row">
-              <span class="chips-label">Atajos comunes:</span>
-              <button type="button" class="symptom-chip" data-text="Mi mascota tiene vómitos frecuentes y diarrea líquida desde hoy">🤮 Vómitos / Diarrea</button>
-              <button type="button" class="symptom-chip danger" data-text="Sospecho intoxicación o ingesta de veneno/planta tóxica, tiembla y babea">⚠️ Veneno / Tóxico</button>
-              <button type="button" class="symptom-chip" data-text="Presenta cojera aguda en pata trasera, dolor al apoyar y se queja">🐾 Cojera o Dolor</button>
-              <button type="button" class="symptom-chip" data-text="Requiero control anual, vacunas al día y desparasitación preventiva">💉 Vacunas / Control</button>
-            </div>
-          </div>
-
-          <!-- Formulario Rápido de Mascota y Contacto -->
-          <form id="tutor-triage-form" class="tutor-quick-form">
-            <div class="form-grid-3">
-              <div class="form-field">
-                <label for="tutor-pet-name">Nombre de tu Mascota *</label>
-                <input type="text" id="tutor-pet-name" required placeholder="Ej: Bundi" class="clinical-input">
               </div>
-
-              <div class="form-field">
-                <label for="tutor-species">Especie *</label>
-                <select id="tutor-species" class="clinical-input" required>
-                  <option value="Canino">Perro (Canino) 🐶</option>
-                  <option value="Felino">Gato (Felino) 🐱</option>
-                  <option value="Exótico">Exótico / Ave / Roedor 🦜</option>
-                </select>
-              </div>
-
-              <div class="form-field">
-                <label for="tutor-phone">Tu WhatsApp (+569XXXXXXXX) *</label>
-                <input type="tel" id="tutor-phone" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$" class="clinical-input font-mono">
-              </div>
-            </div>
-
-            <div class="form-grid-2" style="margin-top: 1rem;">
-              <div class="form-field">
-                <label for="tutor-name">Tu Nombre y Apellido *</label>
-                <input type="text" id="tutor-name" required placeholder="Ej: Sasha Alcalá" class="clinical-input">
-              </div>
-
-              <div class="form-field">
-                <label for="tutor-service-pref">Modalidad de Atención Preferida</label>
-                <select id="tutor-service-pref" class="clinical-input">
-                  <option value="CUALQUIERA">⚡ La más rápida (Telemedicina o Visita)</option>
-                  <option value="TELEMEDICINA">📱 Telemedicina Inmediata (Videollamada)</option>
-                  <option value="DOMICILIO">🚗 Visita Veterinaria a Domicilio</option>
-                  <option value="CLINICA_PRESENCIAL">🏥 Box Clínico Presencial</option>
-                </select>
-              </div>
-            </div>
-
-            <button type="submit" class="btn-triage-submit" id="btn-triage-submit">
-              <span class="btn-icon">⚡</span>
-              <span>Evaluar con Triaje Clínico IA & Reservar Cupo</span>
             </button>
-          </form>
-        </div>
-      </div>
-
-      <!-- ESTADO DE CARGA DEL TRIAJE -->
-      <div class="tutor-triage-loading hidden" id="tutor-triage-loading">
-        <div class="glass-panel loading-card">
-          <div class="loading-scanner-ring"></div>
-          <h3>Evaluando gravedad clínica con IA...</h3>
-          <p>Analizando signos vitales reportados y verificando agenda en tiempo real.</p>
-        </div>
-      </div>
-
-      <!-- RESULTADO DEL TRIAJE + PROTOCOLO DE PRIMEROS AUXILIOS + RESERVA (HOLD_15_MIN) -->
-      <div class="tutor-triage-result hidden" id="tutor-triage-result">
-        <div class="triage-result-wrapper">
-          <!-- Semáforo de Urgencia -->
-          <div class="triage-status-banner" id="triage-status-banner">
-            <div class="status-badge-level" id="triage-level-badge">URGENCIA ALTA</div>
-            <h2 id="triage-diag-title">Posible cuadro gastroentérico agudo</h2>
-            <p id="triage-service-recommendation">Atención veterinaria recomendada en menos de 2 horas.</p>
+            <div class="mic-status-label" id="mic-status-label">Toca el micrófono para hablar</div>
           </div>
 
-          <!-- Tarjeta de Primeros Auxilios Inmediatos -->
-          <div class="glass-panel first-aid-card">
-            <div class="first-aid-header">
-              <span class="first-aid-icon">🛡️</span>
-              <div>
-                <h3>Protocolo de Primeros Auxilios Inmediatos</h3>
-                <small>Indicaciones pre-aprobadas para estabilizar a tu mascota mientras llega la atención médica:</small>
-              </div>
-            </div>
-            <div class="first-aid-body" id="triage-first-aid-body">
-              <!-- Se inyecta dinámicamente -->
-            </div>
+          <!-- Barra de Texto Estilizada -->
+          <div class="client-input-bar">
+            <input type="text" id="client-intent-input" class="client-input-field" placeholder="O escribe aquí sus síntomas (ej: Mi gato vomitó espuma y está decaído)...">
+            <button class="btn-client-send" id="btn-client-send" title="Evaluar con Agente IA">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
           </div>
 
-          <!-- Tarjeta de Bloqueo Temporal de Agenda (HOLD_15_MIN) -->
-          <div class="glass-panel hold-reservation-card">
-            <div class="hold-header">
-              <div class="hold-title-box">
-                <span class="lock-icon">🔒</span>
-                <div>
-                  <h3>Cupo Clínico Bloqueado Temporalmente</h3>
-                  <p>Hemos reservado este horario en exclusiva para ti en la agenda del veterinario.</p>
-                </div>
-              </div>
-              <div class="hold-timer-pill" id="hold-countdown-pill">
-                <span>Expira en:</span>
-                <strong id="hold-timer-text">14:59</strong>
-              </div>
-            </div>
-
-            <div class="appointment-details-grid">
-              <div class="detail-item">
-                <span class="detail-label">Mascota</span>
-                <strong id="hold-pet-name">Bundi</strong>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Modalidad</span>
-                <strong id="hold-modality">Telemedicina de Urgencia</strong>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Horario Asignado</span>
-                <strong id="hold-time-slot">Hoy, 16:30 hrs</strong>
-              </div>
-              <div class="detail-item">
-                <span class="detail-label">Arancel Consulta</span>
-                <strong class="price-tag" id="hold-price">$15.000 CLP</strong>
-              </div>
-            </div>
-
-            <!-- Opciones Híbridas de Horario (Opción C) -->
-            <div class="hybrid-slot-options">
-              <span class="opt-label">¿Te acomoda este horario o prefieres una ventana flexible?</span>
-              <div class="slot-buttons-group">
-                <button type="button" class="btn-slot-choice active" id="btn-slot-assigned">Horario Inmediato Asignado</button>
-                <button type="button" class="btn-slot-choice" id="btn-slot-morning">Ventana Mañana (10:00 - 13:00)</button>
-                <button type="button" class="btn-slot-choice" id="btn-slot-afternoon">Ventana Tarde (15:00 - 19:00)</button>
-              </div>
-            </div>
-
-            <!-- Botón de Pago / Confirmación 1-Clic -->
-            <div class="hold-checkout-action">
-              <button class="btn-pay-confirm" id="btn-confirm-payment">
-                <span class="pay-icon">💳</span>
-                <span id="btn-pay-label">Pagar y Confirmar Cupo ($15.000 CLP)</span>
-              </button>
-              <small class="pay-guarantee">Simulación 1-Clic para Demo • Pasa la cita de HOLD_15_MIN a CONFIRMED y notifica por WhatsApp</small>
-            </div>
+          <!-- Chips de Ejemplo Rápido Clickables para Demos -->
+          <div class="client-demo-chips">
+            <span class="chips-hint">Ejemplos para demos:</span>
+            <button type="button" class="intent-chip danger" data-intent="Mi gato vomitó y está decaído">
+              <span>🚨</span> Mi gato vomitó y está decaído
+            </button>
+            <button type="button" class="intent-chip routine" data-intent="Necesito agendar vacuna anual a domicilio">
+              <span>💉</span> Necesito agendar vacuna anual a domicilio
+            </button>
+            <button type="button" class="intent-chip danger" data-intent="Mi perro comió veneno o planta tóxica y no para de jadear">
+              <span>⚠️</span> Ingesta de tóxico / jadeo
+            </button>
+            <button type="button" class="intent-chip" data-intent="Cojera repentina en pata trasera tras una caída">
+              <span>🐾</span> Cojera aguda tras caída
+            </button>
           </div>
         </div>
       </div>
 
-      <!-- MODAL DE CONFIRMACIÓN EXITOSA CLIENTE -->
-      <div class="modal-backdrop hidden" id="modal-payment-success">
-        <div class="modal-card glass-panel">
-          <div class="modal-success-icon">🎉</div>
-          <h2>¡Atención Confirmada!</h2>
-          <p id="modal-payment-summary">Tu consulta ha sido confirmada y agendada en PostgreSQL.</p>
+      <!-- ESTADO 2: ANIMACIÓN DE EVALUACIÓN BIO INDIGO -->
+      <div class="client-evaluating-card glass-panel hidden" id="client-evaluating-card">
+        <div class="bio-radar-spinner">
+          <div class="radar-dot"></div>
+        </div>
+        <h3 class="evaluating-title">Agente CoVet evaluando síntomas y disponibilidad...</h3>
+        <p class="evaluating-sub">Clasificando urgencia vital con IA, asignando protocolo de primeros auxilios y consultando agenda en tiempo real.</p>
+      </div>
+
+      <!-- ESTADO 3: TRANSFORMACIÓN DINÁMICA (TRIAJE, PREGUNTAS Y AGENDA HÍBRIDA) -->
+      <div class="client-triage-stage hidden" id="client-triage-stage">
+        <!-- Cabecera de Triaje Semántica -->
+        <div class="glass-panel triage-header-banner" id="triage-header-banner">
+          <div class="triage-badge-pill" id="triage-urgency-badge">URGENCIA ALTA — Atención Prioritaria</div>
+          <div class="triage-meta-row">
+            <span class="triage-species-tag" id="triage-species-tag">🐱 Felino</span>
+            <h2 class="triage-motivo-title" id="triage-motivo-title">Vómito agudo felino</h2>
+          </div>
+          <p class="triage-recommendation-text" id="triage-recommendation-text">Nuestro Agente Clínico ha categorizado este cuadro para atención médica prioritaria.</p>
+        </div>
+
+        <!-- Formulario de Identificación y Preguntas Clínicas -->
+        <form class="glass-panel triage-execution-form" id="triage-execution-form">
+          <!-- B) Identificación Rápida por WhatsApp -->
+          <div class="form-section-header">
+            <h3>1. Identificación del Paciente y Tutor</h3>
+            <p>Cruzamos el número con nuestro historial clínico para que el veterinario tenga sus antecedentes previos.</p>
+          </div>
+
+          <div class="form-grid-3">
+            <div class="clinical-field">
+              <label for="client-tutor-phone">WhatsApp del Tutor (+569...) *</label>
+              <input type="tel" id="client-tutor-phone" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$" class="clinical-input font-mono">
+            </div>
+            <div class="clinical-field">
+              <label for="client-tutor-name">Tu Nombre y Apellido *</label>
+              <input type="text" id="client-tutor-name" required placeholder="Ej: Sasha Alcalá" class="clinical-input">
+            </div>
+            <div class="clinical-field">
+              <label for="client-pet-name">Nombre de tu Mascota *</label>
+              <input type="text" id="client-pet-name" required placeholder="Ej: Bundi" class="clinical-input">
+            </div>
+          </div>
+
+          <!-- C) Preguntas Clínicas Dinámicas -->
+          <div class="form-section-header dynamic-header">
+            <h3>2. Preguntas Clínicas Específicas</h3>
+            <p>El Agente CoVet preparó estas 3 preguntas adaptadas al cuadro clínico detectado:</p>
+          </div>
+          <div class="dynamic-questions-list" id="dynamic-questions-list">
+            <!-- Se inyectan dinámicamente las 3 preguntas -->
+          </div>
+
+          <!-- D) Selector Híbrido de Agenda (Opción 3C) -->
+          <div class="form-section-header dynamic-header">
+            <h3>3. Modalidad y Horario de Atención</h3>
+            <p id="schedule-intro-text">Selecciona la modalidad y franja horaria que mejor se adapte a tu situación:</p>
+          </div>
           
-          <div class="n8n-dispatch-status">
-            <span class="n8n-badge success">✅ WhatsApp Notificado</span>
-            <p>El veterinario recibió tu alerta y tú recibirás el enlace de atención por WhatsApp.</p>
+          <div class="hybrid-schedule-container" id="hybrid-schedule-container">
+            <!-- Se inyecta dinámicamente según urgency_level (HIGH vs MEDIUM/LOW) -->
           </div>
 
-          <div class="demo-tip-banner">
-            <strong>💡 Demostración en Vivo:</strong>
-            <p>Pulsa el botón <strong>"Modo Veterinario"</strong> en la esquina superior para comprobar cómo esta cita apareció al instante en la agenda clínica.</p>
+          <!-- Botón para Bloquear Cupo -->
+          <div class="triage-submit-box">
+            <button type="submit" class="btn-block-slot" id="btn-block-slot">
+              <span class="btn-icon">⚡</span>
+              <span id="btn-block-slot-label">Bloquear Cupo Temporal (15 min) & Continuar</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ESTADO 4: RESERVA TEMPORAL (HOLD_15_MIN), AVISO RECURRENTE Y PAGO -->
+      <div class="client-hold-stage hidden" id="client-hold-stage">
+        <!-- Banner de Paciente Recurrente (si paciente_reconocido == true) -->
+        <div class="glass-panel patient-recognized-banner hidden" id="patient-recognized-banner">
+          <div class="recognized-icon">✨</div>
+          <div class="recognized-content">
+            <strong id="patient-recognized-title">¡Hola de nuevo!</strong>
+            <p id="patient-recognized-text">El Agente CoVet encontró el historial clínico previo de tu mascota y ya lo adjuntó para el veterinario.</p>
+          </div>
+        </div>
+
+        <div class="glass-panel hold-countdown-card">
+          <div class="hold-timer-header">
+            <div class="hold-title-wrap">
+              <span class="lock-shield-icon">🔒</span>
+              <div>
+                <h2>Cupo Clínico Bloqueado Temporalmente</h2>
+                <p>Tu cupo ha sido reservado en exclusiva por 15 minutos en la agenda veterinaria.</p>
+              </div>
+            </div>
+            <div class="hold-countdown-pill" id="hold-countdown-pill">
+              <span class="timer-label">Expira en</span>
+              <span class="timer-digits font-mono" id="hold-countdown-digits">15:00</span>
+            </div>
           </div>
 
-          <div class="modal-actions">
-            <button class="btn-primary" id="btn-modal-switch-to-vet">Ver en Modo Veterinario 🩺</button>
-            <button class="btn-secondary" id="btn-modal-reset-triage">Realizar otra consulta</button>
+          <div class="hold-summary-grid">
+            <div class="summary-cell">
+              <span class="cell-label">Mascota</span>
+              <strong class="cell-val" id="hold-summary-pet">Bundi</strong>
+            </div>
+            <div class="summary-cell">
+              <span class="cell-label">Modalidad</span>
+              <strong class="cell-val" id="hold-summary-modality">Domicilio</strong>
+            </div>
+            <div class="summary-cell">
+              <span class="cell-label">Horario / Ventana</span>
+              <strong class="cell-val" id="hold-summary-schedule">11:00 hrs</strong>
+            </div>
+            <div class="summary-cell">
+              <span class="cell-label">Arancel Consulta</span>
+              <strong class="cell-val price-highlight" id="hold-summary-price">$25.000 CLP</strong>
+            </div>
           </div>
+
+          <div class="hold-actions-box">
+            <button class="btn-covet-confirm" id="btn-covet-confirm">
+              <span class="pay-icon">💳</span>
+              <span id="btn-confirm-pay-text">Pagar y Confirmar Cupo ($25.000 CLP)</span>
+            </button>
+            <div class="external-pay-link-wrap hidden" id="external-pay-link-wrap">
+              <a href="#" target="_blank" class="btn-external-pay" id="btn-external-pay">
+                Abrir Pasarela de Pago Oficial (MercadoPago / Webpay) ↗
+              </a>
+            </div>
+            <p class="pay-note">Simulación 1-Clic para Demos de Venta: confirma la reserva en PostgreSQL y notifica de inmediato al veterinario.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ESTADO 5: PAGO CONFIRMADO & PROTOCOLO DE PRIMEROS AUXILIOS DESBLOQUEADO -->
+      <div class="client-confirmed-stage hidden" id="client-confirmed-stage">
+        <div class="glass-panel confirmed-success-banner">
+          <div class="confirmed-check-icon">✓</div>
+          <h2>¡Atención Médica 100% Confirmada!</h2>
+          <p id="confirmed-subtitle">El veterinario de turno ya recibió tu ficha y notificación en tiempo real.</p>
+        </div>
+
+        <!-- Protocolo Clínico Pre-Aprobado (Blindaje Médico-Legal) -->
+        <div class="glass-panel first-aid-unlocked-card" id="first-aid-unlocked-card">
+          <div class="protocol-header">
+            <span class="protocol-icon">🛡️</span>
+            <div>
+              <div class="protocol-badge">PROTOCOLO MÉDICO-LEGAL PRE-APROBADO</div>
+              <h3 id="protocol-title">Protocolo de Primeros Auxilios</h3>
+            </div>
+          </div>
+
+          <div class="protocol-section">
+            <h4>📋 Indicaciones Inmediatas:</h4>
+            <ul class="protocol-list" id="protocol-indications-list"></ul>
+          </div>
+
+          <div class="protocol-section danger-section">
+            <h4>🚫 Prohibiciones Estrictas:</h4>
+            <ul class="protocol-list danger-list" id="protocol-prohibitions-list"></ul>
+          </div>
+
+          <div class="protocol-section warning-section">
+            <h4>🚨 Signos de Alerta Roja:</h4>
+            <ul class="protocol-list alert-list" id="protocol-alerts-list"></ul>
+          </div>
+
+          <div class="protocol-tutor-message" id="protocol-tutor-message"></div>
+
+          <div class="clinical-disclaimer">
+            <span>⚖️ <strong>Aviso de Seguridad Clínica:</strong> Guía preventiva de contención validada. No reemplaza el examen físico ni autoriza automedicación veterinaria.</span>
+          </div>
+        </div>
+
+        <div class="confirmed-bottom-actions">
+          <button class="btn-switch-vet-demo" id="btn-switch-vet-demo">
+            <span>🩺</span> Ver cómo aparece esta cita en el Modo Veterinario
+          </button>
+          <button class="btn-new-triage" id="btn-new-triage">
+            Realizar otra consulta
+          </button>
         </div>
       </div>
     </section>
