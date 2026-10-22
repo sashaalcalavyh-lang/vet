@@ -2,9 +2,12 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VetSaaS — Gestión Clínica & Fidelización por WhatsApp</title>
-  <meta name="description" content="Plataforma de alta velocidad para clínicas veterinarias: agendamiento ágil, fichas clínicas y recordatorios preventivos automatizados por WhatsApp.">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CoVet — Fichas Clínicas con IA & Fidelización WhatsApp</title>
+  <meta name="description" content="Núcleo clínico asistido por IA para veterinarios: dictado por voz, estructuración SOAP instantánea y recordatorios por WhatsApp.">
+  <meta name="theme-color" content="#090d16">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -12,182 +15,496 @@
 </head>
 <body>
   <div class="app-wrapper">
-    <!-- Navbar -->
+    <!-- Header Principal -->
     <header class="app-header">
       <div class="header-content">
         <div class="brand">
           <div class="brand-logo">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
             </svg>
           </div>
           <div>
-            <h1 class="brand-title">VetSaaS <span class="badge-tag">Hybrid Core</span></h1>
-            <p class="brand-subtitle">Clínicas Veterinarias de Alta Frecuencia</p>
+            <h1 class="brand-title">CoVet <span class="badge-tag">Vibe & Verify</span></h1>
+            <p class="brand-subtitle">IA Clínica & WhatsApp en Terreno</p>
           </div>
         </div>
+
         <div class="header-status">
-          <div class="status-pill" id="backend-status-pill">
+          <div class="status-pill" id="backend-status-pill" title="Servidor VPS Hetzner">
             <span class="status-dot pulsing"></span>
-            <span id="backend-status-text">Conectando Backend Hetzner...</span>
+            <span id="backend-status-text">Conectando Backend...</span>
           </div>
-          <div class="status-pill db-pill" id="db-status-pill">
+          <div class="status-pill db-pill" id="db-status-pill" title="Base de Datos Relacional">
             <span class="db-icon">🗄️</span>
             <span id="db-status-text">PostgreSQL 16</span>
           </div>
         </div>
       </div>
+
+      <!-- Navigation Tabs (Mobile-Ergonomic) -->
+      <nav class="nav-tabs" role="tablist">
+        <button class="tab-btn active" id="tab-btn-soap" data-tab="tab-soap" role="tab" aria-selected="true">
+          <span class="tab-icon">🎙️</span>
+          <span class="tab-label">Dictado SOAP</span>
+        </button>
+        <button class="tab-btn" id="tab-btn-agenda" data-tab="tab-agenda" role="tab" aria-selected="false">
+          <span class="tab-icon">📅</span>
+          <span class="tab-label">Agenda & Citas</span>
+          <span class="tab-counter" id="tab-citas-counter">0</span>
+        </button>
+        <button class="tab-btn" id="tab-btn-history" data-tab="tab-history" role="tab" aria-selected="false">
+          <span class="tab-icon">📋</span>
+          <span class="tab-label">Historial Fichas</span>
+        </button>
+      </nav>
     </header>
 
     <!-- Main Container -->
     <main class="app-main">
-      <!-- KPI Stats Bar -->
-      <section class="kpi-grid">
-        <div class="kpi-card" id="kpi-citas-card">
-          <div class="kpi-icon teal">📅</div>
-          <div class="kpi-info">
-            <span class="kpi-label">Citas Programadas</span>
-            <h3 class="kpi-value" id="kpi-citas-count">0</h3>
-            <span class="kpi-trend">Agenda activa</span>
+      <!-- ========================================== -->
+      <!-- TAB 1: NÚCLEO CLÍNICO DE DICTADO SOAP IA   -->
+      <!-- ========================================== -->
+      <section class="tab-pane active" id="tab-soap" role="tabpanel">
+        
+        <!-- ESTADO 1: EN ESPERA / TERRENO -->
+        <div class="vibe-state-container" id="state-idle">
+          <div class="idle-card glass-panel">
+            <div class="idle-header">
+              <span class="mode-badge">⚡ Asistente Clínico de Voz</span>
+              <h2>Dictado en Terreno</h2>
+              <p>Habla con naturalidad durante la consulta. La IA transcribirá y estructurará el estándar SOAP (Subjetivo, Objetivo, Análisis y Receta).</p>
+            </div>
+
+            <!-- Selector Opcional de Cita Previa -->
+            <div class="appointment-selector-box">
+              <label for="select-cita-contexto">Vincular a cita existente (opcional):</label>
+              <select id="select-cita-contexto" class="custom-select">
+                <option value="">-- Consulta espontánea / Sin cita previa --</option>
+              </select>
+            </div>
+
+            <!-- Botón Gigante Táctil de Micrófono -->
+            <div class="mic-trigger-wrapper">
+              <button class="btn-mic-main" id="btn-start-record" aria-label="Iniciar dictado clínico">
+                <div class="mic-icon-circle">
+                  <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+                    <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                    <line x1="12" x2="12" y1="19" y2="22"/>
+                  </svg>
+                </div>
+                <span class="mic-btn-label">Tocar para Dictar Ficha SOAP</span>
+                <span class="mic-btn-hint">Graba hasta 90 seg de dictado</span>
+              </button>
+            </div>
+
+            <!-- Tips Clínicos para Máxima Precisión -->
+            <div class="clinical-tips-grid">
+              <div class="tip-card">
+                <span class="tip-icon">👤</span>
+                <div>
+                  <strong>Tutor y Paciente</strong>
+                  <p>Menciona nombre del dueño, teléfono y datos de la mascota.</p>
+                </div>
+              </div>
+              <div class="tip-card">
+                <span class="tip-icon">🩺</span>
+                <div>
+                  <strong>Examen & Signos</strong>
+                  <p>Dicta temperatura, constantes, mucosas y motivo de visita.</p>
+                </div>
+              </div>
+              <div class="tip-card">
+                <span class="tip-icon">💊</span>
+                <div>
+                  <strong>Plan & Receta</strong>
+                  <p>Especifica medicamentos, dosis, frecuencia y control.</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div class="kpi-card" id="kpi-pacientes-card">
-          <div class="kpi-icon indigo">🐾</div>
-          <div class="kpi-info">
-            <span class="kpi-label">Pacientes en Base</span>
-            <h3 class="kpi-value" id="kpi-pacientes-count">0</h3>
-            <span class="kpi-trend">Historial clínico</span>
+        <!-- ESTADO 2: GRABANDO (ACTIVO) -->
+        <div class="vibe-state-container hidden" id="state-recording">
+          <div class="recording-card glass-panel">
+            <div class="recording-indicator-badge">
+              <span class="rec-dot"></span>
+              <span>GRABANDO AUDIO EN VIVO</span>
+            </div>
+
+            <div class="timer-display-box">
+              <span class="timer-value" id="recording-timer">00:00</span>
+              <span class="timer-target">/ 01:30 objetivo</span>
+            </div>
+
+            <div class="waveform-visualizer">
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+              <div class="wave-bar"></div>
+            </div>
+
+            <p class="recording-instruction">Dicta la consulta en voz alta. Al finalizar, pulsa detener para procesar con IA.</p>
+
+            <div class="recording-actions">
+              <button class="btn-rec-stop" id="btn-stop-record">
+                <span class="stop-icon">■</span>
+                <span>Detener y Estructurar SOAP</span>
+              </button>
+              <button class="btn-rec-cancel" id="btn-cancel-record">
+                <span>✕ Descartar Audio</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="kpi-card" id="kpi-tutores-card">
-          <div class="kpi-icon emerald">👤</div>
-          <div class="kpi-info">
-            <span class="kpi-label">Tutores Registrados</span>
-            <h3 class="kpi-value" id="kpi-tutores-count">0</h3>
-            <span class="kpi-trend">Contactos validados</span>
+        <!-- ESTADO 3: PROCESANDO CON POLLING REAL -->
+        <div class="vibe-state-container hidden" id="state-processing">
+          <div class="processing-card glass-panel">
+            <div class="ai-processing-visual">
+              <div class="spinner-ai"></div>
+              <div class="pulse-ring"></div>
+            </div>
+
+            <h2 id="processing-step-title">Procesando Dictado Clínico</h2>
+            <p id="processing-step-desc">Enviando audio al servidor seguro en Hetzner...</p>
+
+            <div class="progress-bar-container">
+              <div class="progress-bar-fill" id="processing-bar-fill" style="width: 15%;"></div>
+            </div>
+
+            <div class="ai-steps-checklist">
+              <div class="step-item active" id="step-upload">
+                <span class="step-dot"></span>
+                <span>Subida de audio seguro</span>
+              </div>
+              <div class="step-item" id="step-whisper">
+                <span class="step-dot"></span>
+                <span>Transcripción con Groq Whisper Large</span>
+              </div>
+              <div class="step-item" id="step-claude">
+                <span class="step-dot"></span>
+                <span>Estructuración SOAP con Anthropic Claude</span>
+              </div>
+              <div class="step-item" id="step-ready">
+                <span class="step-dot"></span>
+                <span>Listo para revisión humana</span>
+              </div>
+            </div>
+
+            <!-- Bloque de Error si Falla -->
+            <div class="error-banner hidden" id="processing-error-banner">
+              <div class="error-icon">⚠️</div>
+              <div class="error-body">
+                <strong>Ocurrió un problema en el procesamiento</strong>
+                <p id="processing-error-message">Detalles del error...</p>
+              </div>
+              <button class="btn-action-small" id="btn-retry-record">Reintentar</button>
+            </div>
           </div>
         </div>
 
-        <div class="kpi-card" id="kpi-wa-card">
-          <div class="kpi-icon green">💬</div>
-          <div class="kpi-info">
-            <span class="kpi-label">Canal WhatsApp</span>
-            <h3 class="kpi-value">Activo</h3>
-            <span class="kpi-trend success-text">n8n Hetzner Bridge</span>
+        <!-- ESTADO 4: PANTALLA "VIBE & VERIFY" (EDICIÓN Y CONFIRMACIÓN) -->
+        <div class="vibe-state-container hidden" id="state-review">
+          <div class="review-wrapper">
+            <!-- Barra Superior de Revisión -->
+            <div class="review-header glass-panel">
+              <div class="review-title-box">
+                <span class="badge-tag green">✨ READY FOR REVIEW</span>
+                <h2>Verificar Ficha Clínica SOAP</h2>
+                <p>Revisa y edita los datos antes de guardarlos en PostgreSQL y despachar el resumen por WhatsApp.</p>
+              </div>
+              <div class="review-header-actions">
+                <button class="btn-outline-small" id="btn-discard-review">✕ Descartar</button>
+              </div>
+            </div>
+
+            <!-- Formulario de Revisión SOAP -->
+            <form id="form-soap-review" class="soap-review-form">
+              <input type="hidden" id="soap-fiche-id" value="">
+
+              <!-- Tarjeta 1: Tutor y WhatsApp -->
+              <section class="glass-panel section-card">
+                <div class="section-card-title">
+                  <span class="section-icon">📱</span>
+                  <h3>Tutor & Notificación WhatsApp</h3>
+                </div>
+                <div class="form-grid-2">
+                  <div class="input-group">
+                    <label for="review-tutor-nombre">Nombre del Tutor/Dueño *</label>
+                    <input type="text" id="review-tutor-nombre" required placeholder="Ej: Marcela Soto" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="review-tutor-telefono">WhatsApp Tutor (+569XXXXXXXX) *</label>
+                    <input type="tel" id="review-tutor-telefono" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$" class="glass-input font-mono">
+                    <small class="field-hint">Requerido para el recordatorio y receta vía n8n</small>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Tarjeta 2: Datos del Paciente -->
+              <section class="glass-panel section-card">
+                <div class="section-card-title">
+                  <span class="section-icon">🐾</span>
+                  <h3>Datos del Paciente</h3>
+                </div>
+                <div class="form-grid-3">
+                  <div class="input-group">
+                    <label for="review-paciente-nombre">Nombre Paciente *</label>
+                    <input type="text" id="review-paciente-nombre" required placeholder="Ej: Rocky" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="review-especie">Especie *</label>
+                    <select id="review-especie" class="glass-input" required>
+                      <option value="Canino">Canino 🐶</option>
+                      <option value="Felino">Felino 🐱</option>
+                      <option value="Exótico">Exótico 🦜</option>
+                      <option value="Equino">Equino 🐴</option>
+                      <option value="Otro">Otro 🐾</option>
+                    </select>
+                  </div>
+                  <div class="input-group">
+                    <label for="review-raza">Raza</label>
+                    <input type="text" id="review-raza" placeholder="Ej: Mestizo / Golden" class="glass-input">
+                  </div>
+                </div>
+                <div class="form-grid-2" style="margin-top: 1rem;">
+                  <div class="input-group">
+                    <label for="review-edad">Edad Aproximada</label>
+                    <input type="text" id="review-edad" placeholder="Ej: 3 años, 4 meses" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="review-peso">Peso (kg)</label>
+                    <input type="number" id="review-peso" step="0.1" min="0" placeholder="Ej: 14.5" class="glass-input">
+                  </div>
+                </div>
+              </section>
+
+              <!-- Tarjeta 3: Ficha Clínica Estándar SOAP -->
+              <section class="glass-panel section-card">
+                <div class="section-card-title">
+                  <span class="section-icon">🩺</span>
+                  <h3>Ficha Clínica SOAP</h3>
+                </div>
+
+                <div class="soap-fields-container">
+                  <!-- S - Subjetivo -->
+                  <div class="soap-field-group">
+                    <div class="soap-tag s-tag">S • Subjetivo / Anamnesis</div>
+                    <label for="review-anamnesis" class="sr-only">Anamnesis</label>
+                    <textarea id="review-anamnesis" rows="3" class="glass-textarea auto-resize" placeholder="Motivo de consulta, historial y síntomas reportados por el tutor..."></textarea>
+                  </div>
+
+                  <!-- O - Objetivo -->
+                  <div class="soap-field-group">
+                    <div class="soap-tag o-tag">O • Objetivo / Examen Físico</div>
+                    <label for="review-examen-fisico" class="sr-only">Examen Físico</label>
+                    <textarea id="review-examen-fisico" rows="3" class="glass-textarea auto-resize" placeholder="Temperatura, constantes vitales (FC, FR), mucosas, TLLC y palpación..."></textarea>
+                  </div>
+
+                  <!-- A - Análisis -->
+                  <div class="soap-field-group">
+                    <div class="soap-tag a-tag">A • Análisis / Diagnóstico</div>
+                    <label for="review-diagnostico" class="sr-only">Diagnóstico</label>
+                    <textarea id="review-diagnostico" rows="2" class="glass-textarea auto-resize" placeholder="Diagnóstico presuntivo y diferenciales clínicos..."></textarea>
+                  </div>
+
+                  <!-- P - Plan Terapéutico & Receta -->
+                  <div class="soap-field-group">
+                    <div class="soap-tag p-tag">P • Plan Terapéutico & Receta</div>
+                    <label for="review-plan-terapeutico" class="sr-only">Plan Terapéutico</label>
+                    <textarea id="review-plan-terapeutico" rows="4" class="glass-textarea auto-resize" placeholder="Tratamiento administrado en consulta, receta detallada con dosis, frecuencia, duración e indicaciones..."></textarea>
+                  </div>
+
+                  <!-- Próximos Pasos -->
+                  <div class="soap-field-group">
+                    <div class="soap-tag next-tag">📅 Próximos Pasos & Control</div>
+                    <label for="review-proximos-pasos" class="sr-only">Próximos Pasos</label>
+                    <textarea id="review-proximos-pasos" rows="2" class="glass-textarea auto-resize" placeholder="Fecha o plazo de próximo control, vacunas o exámenes solicitados..."></textarea>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Tarjeta 4: Transcripción Literal de Respaldo -->
+              <details class="transcript-details glass-panel">
+                <summary>🎙️ Ver Transcripción Literal de Audio (Respaldo)</summary>
+                <div class="transcript-raw-content" id="review-transcript-raw">
+                  Sin transcripción disponible.
+                </div>
+              </details>
+
+              <!-- Barra Inferior de Acción y Confirmación -->
+              <div class="review-submit-bar glass-panel">
+                <button type="submit" class="btn-confirm-all" id="btn-confirm-soap">
+                  <span class="btn-icon">✓</span>
+                  <span class="btn-text">[✓] Confirmar Ficha y Enviar por WhatsApp</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- MODAL DE ÉXITO FINAL -->
+        <div class="modal-backdrop hidden" id="modal-success">
+          <div class="modal-card glass-panel">
+            <div class="modal-success-icon">🎉</div>
+            <h2>¡Ficha Guardada con Éxito!</h2>
+            <p id="modal-success-summary">La ficha clínica ha sido registrada en PostgreSQL.</p>
+            
+            <div class="n8n-dispatch-status" id="modal-n8n-status">
+              <span class="n8n-badge" id="n8n-badge-indicator">⏳ Verificando WhatsApp...</span>
+              <p id="n8n-status-text">Despacho hacia n8n en curso.</p>
+            </div>
+
+            <div class="modal-actions">
+              <button class="btn-primary" id="btn-modal-new-soap">Dictar Nueva Ficha</button>
+              <button class="btn-secondary" id="btn-modal-view-agenda">Ver Agenda</button>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Content Split Grid -->
-      <div class="content-split">
-        <!-- Left: Quick Appointment / Patient Form -->
-        <section class="panel-card form-panel">
-          <div class="panel-header">
-            <h2>⚡ Agendamiento Exprés</h2>
-            <p>Registra tutor, paciente y cita en una sola acción</p>
+      <!-- ========================================== -->
+      <!-- TAB 2: AGENDA & PACIENTES (PRESERVADA)     -->
+      <!-- ========================================== -->
+      <section class="tab-pane hidden" id="tab-agenda" role="tabpanel">
+        <!-- KPI Stats Bar -->
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon teal">📅</div>
+            <div class="kpi-info">
+              <span class="kpi-label">Citas Programadas</span>
+              <h3 class="kpi-value" id="kpi-citas-count">0</h3>
+              <span class="kpi-trend">En PostgreSQL</span>
+            </div>
           </div>
 
-          <form id="appointment-form" class="custom-form">
-            <div class="form-section-title">1. Datos del Tutor (Dueño)</div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="tutor-nombre">Nombre Completo</label>
-                <input type="text" id="tutor-nombre" required placeholder="Ej. Camila Silva">
-              </div>
-              <div class="form-group">
-                <label for="tutor-telefono">WhatsApp (+569...)</label>
-                <input type="tel" id="tutor-telefono" required placeholder="+56912345678">
-              </div>
+          <div class="kpi-card">
+            <div class="kpi-icon indigo">🐾</div>
+            <div class="kpi-info">
+              <span class="kpi-label">Pacientes en Base</span>
+              <h3 class="kpi-value" id="kpi-pacientes-count">0</h3>
+              <span class="kpi-trend">Historial clínico</span>
+            </div>
+          </div>
+
+          <div class="kpi-card">
+            <div class="kpi-icon emerald">👥</div>
+            <div class="kpi-info">
+              <span class="kpi-label">Tutores Registrados</span>
+              <h3 class="kpi-value" id="kpi-tutores-count">0</h3>
+              <span class="kpi-trend">Contactos validados</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Grid: Agendamiento Rápido + Lista -->
+        <div class="dashboard-grid">
+          <section class="panel-card form-panel glass-panel">
+            <div class="panel-header">
+              <h2>📅 Agendar Cita Rápida</h2>
+              <p>Registro manual para citas presenciales o a domicilio</p>
             </div>
 
-            <div class="form-section-title">2. Datos de la Mascota</div>
-            <div class="form-row">
+            <form id="appointment-form" class="clean-form">
               <div class="form-group">
-                <label for="paciente-nombre">Nombre Mascota</label>
-                <input type="text" id="paciente-nombre" required placeholder="Ej. Thor">
+                <label for="tutor-nombre">Nombre Tutor</label>
+                <input type="text" id="tutor-nombre" required placeholder="Ej: Sasha Alcalá">
               </div>
-              <div class="form-group">
-                <label for="paciente-especie">Especie</label>
-                <select id="paciente-especie" required>
-                  <option value="Canino">Canino 🐶</option>
-                  <option value="Felino">Felino 🐱</option>
-                  <option value="Exótico">Exótico 🦜</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="paciente-raza">Raza</label>
-                <input type="text" id="paciente-raza" placeholder="Ej. Golden Retriever">
-              </div>
-              <div class="form-group">
-                <label for="paciente-peso">Peso (Kg)</label>
-                <input type="number" step="0.1" id="paciente-peso" required placeholder="14.5">
-              </div>
-            </div>
 
-            <div class="form-section-title">3. Detalle de la Cita</div>
-            <div class="form-row">
+              <div class="form-group">
+                <label for="tutor-telefono">WhatsApp Tutor (+569XXXXXXXX)</label>
+                <input type="tel" id="tutor-telefono" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$">
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="paciente-nombre">Mascota</label>
+                  <input type="text" id="paciente-nombre" required placeholder="Ej: Bundi">
+                </div>
+                <div class="form-group">
+                  <label for="paciente-especie">Especie</label>
+                  <select id="paciente-especie" required>
+                    <option value="Canino">Canino (Perro)</option>
+                    <option value="Felino">Felino (Gato)</option>
+                    <option value="Exótico">Exótico</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="paciente-raza">Raza</label>
+                  <input type="text" id="paciente-raza" placeholder="Ej: Mestizo">
+                </div>
+                <div class="form-group">
+                  <label for="paciente-peso">Peso (kg)</label>
+                  <input type="number" id="paciente-peso" step="0.1" placeholder="Ej: 8.5">
+                </div>
+              </div>
+
               <div class="form-group">
                 <label for="cita-fecha">Fecha y Hora</label>
                 <input type="datetime-local" id="cita-fecha" required>
               </div>
+
               <div class="form-group">
-                <label for="cita-motivo">Motivo / Tratamiento</label>
-                <input type="text" id="cita-motivo" required placeholder="Vacuna Óctuple + Control">
+                <label for="cita-motivo">Motivo Consulta</label>
+                <textarea id="cita-motivo" rows="2" required placeholder="Ej: Vacunación Séxtuple anual y control de peso"></textarea>
+              </div>
+
+              <button type="submit" class="btn-submit" id="btn-submit-appointment">
+                <span>Guardar Cita en PostgreSQL</span>
+              </button>
+            </form>
+          </section>
+
+          <section class="panel-card list-panel glass-panel">
+            <div class="panel-header flex-between">
+              <div>
+                <h2>📋 Citas Programadas</h2>
+                <p>Base de datos activa en Hetzner</p>
+              </div>
+              <button class="btn-refresh" id="btn-refresh" title="Refrescar lista">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+
+            <div class="appointments-container" id="appointments-list">
+              <div class="loading-state">
+                <span class="spinner"></span>
+                <p>Cargando citas...</p>
               </div>
             </div>
+          </section>
+        </div>
+      </section>
 
-            <button type="submit" class="btn-primary" id="btn-submit-appointment">
-              <span>Guardar Cita & Programar Recordatorio</span>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
-            </button>
-          </form>
-        </section>
-
-        <!-- Right: Live Appointments Stream -->
-        <section class="panel-card list-panel">
+      <!-- ========================================== -->
+      <!-- TAB 3: HISTORIAL DE FICHAS CLÍNICAS        -->
+      <!-- ========================================== -->
+      <section class="tab-pane hidden" id="tab-history" role="tabpanel">
+        <div class="glass-panel history-panel">
           <div class="panel-header flex-between">
             <div>
-              <h2>📋 Agenda Activa</h2>
-              <p>Sincronización en vivo con PostgreSQL 16 en Hetzner</p>
+              <h2>📋 Fichas Clínicas Generadas</h2>
+              <p>Registro histórico de atenciones SOAP y estado de despacho WhatsApp</p>
             </div>
-            <button class="btn-refresh" id="btn-refresh" title="Refrescar lista">
+            <button class="btn-refresh" id="btn-refresh-fiches" title="Refrescar fichas">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             </button>
           </div>
 
-          <div class="appointments-container" id="appointments-list">
+          <div class="fiches-list-container" id="fiches-history-list">
             <div class="loading-state">
               <span class="spinner"></span>
-              <p>Cargando citas desde la nube...</p>
+              <p>Cargando historial de fichas...</p>
             </div>
-          </div>
-        </section>
-      </div>
-
-      <!-- Infrastructure Architecture Visualizer -->
-      <section class="architecture-banner">
-        <div class="arch-badge">Arquitectura Híbrida Operativa</div>
-        <div class="arch-nodes">
-          <div class="arch-node">
-            <span class="node-icon">▲</span>
-            <strong>Vercel Edge</strong>
-            <small>Frontend Global PWA</small>
-          </div>
-          <span class="arch-arrow">⟷ HTTPS REST ⟷</span>
-          <div class="arch-node">
-            <span class="node-icon">⚡</span>
-            <strong>Hetzner VPS</strong>
-            <small>FastAPI Core (Port 8090)</small>
-          </div>
-          <span class="arch-arrow">⟷ Docker Net ⟷</span>
-          <div class="arch-node secure">
-            <span class="node-icon">🔒</span>
-            <strong>PostgreSQL 16</strong>
-            <small>Aislado (Sin salida a Internet)</small>
           </div>
         </div>
       </section>
@@ -195,9 +512,23 @@
 
     <!-- Footer -->
     <footer class="app-footer">
-      <p>VetSaaS Micro-App Core • Desarrollado por Sebastián & Sasha • Conectado a Hetzner Cloud (Falkenstein, DE)</p>
+      <p>CoVet • Núcleo Clínico SOAP & WhatsApp • Monorepo Hetzner VPS + Vercel</p>
     </footer>
   </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('[PWA] Service Worker registrado con alcance:', reg.scope))
+          .catch(err => console.warn('[PWA] Error registrando SW:', err));
+      });
+    }
+  </script>
 
   <script type="module" src="/main.js"></script>
 </body>

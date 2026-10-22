@@ -459,6 +459,26 @@ def obtener_estado_ficha(task_id: uuid.UUID, db: Session = Depends(get_db)):
         "fecha_confirmacion": fiche.fecha_confirmacion.isoformat() if fiche.fecha_confirmacion else None
     }
 
+@app.get("/api/v1/covet/fiches")
+def listar_fichas_clinicas(limit: int = 25, db: Session = Depends(get_db)):
+    """
+    Retorna las últimas fichas clínicas registradas para alimentar el historial del Frontend.
+    """
+    fiches = db.query(MedicalFicheDB).order_by(MedicalFicheDB.fecha_creacion.desc()).limit(limit).all()
+    return [
+        {
+            "id": str(f.id),
+            "cita_id": f.cita_id,
+            "tutor_id": f.tutor_id,
+            "paciente_id": f.paciente_id,
+            "estado_procesamiento": f.estado_procesamiento,
+            "json_estructurado": f.json_estructurado,
+            "fecha_creacion": f.fecha_creacion.isoformat() if f.fecha_creacion else None,
+            "fecha_confirmacion": f.fecha_confirmacion.isoformat() if f.fecha_confirmacion else None
+        }
+        for f in fiches
+    ]
+
 @app.put("/api/v1/covet/fiches/{task_id}/confirm")
 def confirmar_y_enviar_ficha(
     task_id: uuid.UUID,
