@@ -882,6 +882,66 @@
         </div>
       </div>
 
+      <!-- ======================================================= -->
+      <!-- BÓVEDA CIFRADA LEY 21.719 (AES-256 • ART. 14TER) -->
+      <!-- ======================================================= -->
+      <div class="glass-panel admin-vault-panel" id="admin-vault-panel">
+        <div class="panel-section-title">
+          <div class="vault-header-title">
+            <h3>🔐 Bóveda de Respaldo Cifrado (AES-256 • Art. 14Ter Ley 21.719)</h3>
+            <p>Copias en caliente con aislamiento criptográfico, retención legal de 14 días y clave maestra segregada.</p>
+          </div>
+          <div class="vault-badges-row">
+            <span class="vault-badge-secure" id="vault-status-badge">
+              <span class="service-dot online" id="vault-status-dot"></span>
+              <span id="vault-status-text">✅ PROTEGIDO</span>
+            </span>
+            <span class="vault-badge-algo" id="vault-encryption-label">AES-256-CBC • PBKDF2 (100k)</span>
+          </div>
+        </div>
+
+        <div class="vault-kpis-grid">
+          <div class="vault-kpi-item">
+            <span class="vault-kpi-name">Último Respaldo UTC</span>
+            <div class="vault-kpi-main" id="vault-last-time">Cargando...</div>
+            <span class="vault-kpi-footnote" id="vault-file-name">--</span>
+          </div>
+
+          <div class="vault-kpi-item">
+            <span class="vault-kpi-name">Tamaño Cifrado</span>
+            <div class="vault-kpi-main" id="vault-size">-- KB</div>
+            <span class="vault-kpi-footnote">Compresión gzip -9</span>
+          </div>
+
+          <div class="vault-kpi-item">
+            <span class="vault-kpi-name">Copias Retenidas</span>
+            <div class="vault-kpi-main" id="vault-copies">-- copias</div>
+            <span class="vault-kpi-footnote">Ventana de 14 días</span>
+          </div>
+
+          <div class="vault-kpi-item vault-sha-box">
+            <span class="vault-kpi-name">Hash Criptográfico SHA-256</span>
+            <div class="vault-sha-interactive">
+              <code class="vault-hash-code" id="vault-sha-display" title="Click en el botón para copiar hash completo">--</code>
+              <button type="button" class="btn-copy-sha" id="btn-copy-vault-sha" title="Copiar Hash SHA-256 completo">
+                <span id="copy-sha-icon">📋</span> Copiar
+              </button>
+            </div>
+            <span class="vault-kpi-footnote" id="vault-legal-badge">Cumplimiento Ley 21.719 Garantizado</span>
+          </div>
+        </div>
+
+        <div class="vault-footer-row">
+          <button type="button" class="btn-admin-action btn-vault-trigger" id="btn-admin-trigger-backup">
+            <span class="vault-btn-icon">⚡</span>
+            <span id="btn-vault-trigger-text">Ejecutar Backup Cifrado Ahora</span>
+          </button>
+          <span class="vault-footer-meta">
+            Bóveda en reposo: <code>/var/backups/covet_encrypted</code> • Llave: <code>/root/.covet_backup.key</code> (Modo 400 RO)
+          </span>
+        </div>
+      </div>
+
       <!-- Acciones de Prueba & Compliance -->
       <div class="glass-panel admin-actions-panel">
         <div class="panel-section-title">

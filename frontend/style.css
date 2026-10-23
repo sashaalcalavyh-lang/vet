@@ -2733,6 +2733,203 @@ body[data-active-view="client"] .theme-toggle-btn {
   color: var(--text-muted);
 }
 
+/* ========================================================= */
+/* BÓVEDA CIFRADA LEY 21.719 (CLINICAL GLASSMORPHISM)        */
+/* ========================================================= */
+.admin-vault-panel {
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, rgba(15, 23, 42, 0.45) 100%), var(--bg-card);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  box-shadow: 0 8px 32px rgba(16, 185, 129, 0.08);
+  position: relative;
+  overflow: hidden;
+}
+
+.vault-header-title h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vault-header-title p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.vault-badges-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.vault-badge-secure {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--safe-emerald);
+}
+
+.vault-badge-algo {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-full);
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--bio-indigo);
+  letter-spacing: 0.3px;
+}
+
+.vault-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.vault-kpi-item {
+  padding: 1rem 1.15rem;
+  background: var(--input-bg);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.vault-kpi-name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+}
+
+.vault-kpi-main {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.vault-kpi-footnote {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-sha-box {
+  grid-column: span 1;
+}
+
+@media (min-width: 900px) {
+  .vault-sha-box {
+    grid-column: span 2;
+  }
+}
+
+.vault-sha-interactive {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.vault-hash-code {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82rem;
+  background: rgba(0, 0, 0, 0.35);
+  padding: 0.4rem 0.65rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #34D399;
+  letter-spacing: 0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-copy-sha {
+  padding: 0.4rem 0.75rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  color: var(--text-main);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btn-copy-sha:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: var(--safe-emerald);
+  color: var(--safe-emerald);
+}
+
+.vault-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.btn-vault-trigger {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.3) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #ECFDF5;
+  font-weight: 800;
+}
+
+.btn-vault-trigger:hover:not(:disabled) {
+  border-color: #34D399;
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.35);
+  color: #FFFFFF;
+}
+
+.btn-vault-trigger:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+.vault-footer-meta {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.vault-footer-meta code {
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 0.15rem 0.35rem;
+  border-radius: 4px;
+}
+
 .admin-quick-buttons {
   display: flex;
   flex-wrap: wrap;

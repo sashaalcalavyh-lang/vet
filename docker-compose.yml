@@ -31,6 +31,9 @@ services:
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-3-5-sonnet-latest}
       - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://n8n_app:5678/webhook/vet-cita-alerta}
       - SECRET_KEY=${SECRET_KEY:-CoVetPepperKeyChileLey21719SecureHmacSha256!}
+    volumes:
+      - /var/backups/covet_encrypted:/var/backups/covet_encrypted
+      - /root/.covet_backup.key:/run/secrets/covet_backup.key:ro
     depends_on:
       - vet-db
     networks:

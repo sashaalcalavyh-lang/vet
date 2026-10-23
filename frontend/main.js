@@ -1728,6 +1728,72 @@ const adminConsoleBox = document.getElementById('admin-console-box');
 const adminConsoleBody = document.getElementById('admin-console-body');
 const btnCloseAdminConsole = document.getElementById('btn-close-admin-console');
 
+// Bóveda Cifrada Ley 21.719
+const vaultStatusBadge = document.getElementById('vault-status-badge');
+const vaultStatusDot = document.getElementById('vault-status-dot');
+const vaultStatusText = document.getElementById('vault-status-text');
+const vaultEncryptionLabel = document.getElementById('vault-encryption-label');
+const vaultLastTime = document.getElementById('vault-last-time');
+const vaultFileName = document.getElementById('vault-file-name');
+const vaultSize = document.getElementById('vault-size');
+const vaultCopies = document.getElementById('vault-copies');
+const vaultShaDisplay = document.getElementById('vault-sha-display');
+const btnCopyVaultSha = document.getElementById('btn-copy-vault-sha');
+const copyShaIcon = document.getElementById('copy-sha-icon');
+const btnAdminTriggerBackup = document.getElementById('btn-admin-trigger-backup');
+const btnVaultTriggerText = document.getElementById('btn-vault-trigger-text');
+
+let currentVaultSha = '';
+
+function formatVaultTimestamp(ts) {
+  if (!ts) return 'Sin respaldos aún';
+  const match = /^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})_UTC$/.exec(ts);
+  if (match) {
+    const [, y, m, d, h, min, s] = match;
+    return `${y}-${m}-${d} ${h}:${min}:${s} UTC`;
+  }
+  return ts;
+}
+
+function updateVaultUI(vault) {
+  if (!vault) return;
+  const isOk = vault.status === 'OK';
+
+  if (vaultStatusText) {
+    vaultStatusText.textContent = isOk ? '✅ PROTEGIDO' : (vault.status === 'PENDING_FIRST_RUN' ? '⏳ PENDIENTE PRIMER RESPALDO' : vault.status);
+  }
+  if (vaultStatusDot) {
+    vaultStatusDot.className = isOk ? 'service-dot online' : 'service-dot offline';
+  }
+  if (vaultEncryptionLabel && vault.encryption) {
+    vaultEncryptionLabel.textContent = `${vault.encryption} • PBKDF2 (100k)`;
+  }
+  if (vaultLastTime) {
+    vaultLastTime.textContent = formatVaultTimestamp(vault.last_backup_utc);
+  }
+  if (vaultFileName) {
+    vaultFileName.textContent = vault.file_name || 'covet_db_pending.sql.gz.enc';
+  }
+  if (vaultSize) {
+    const bytes = vault.size_bytes || 0;
+    vaultSize.textContent = `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  if (vaultCopies) {
+    vaultCopies.textContent = `${vault.retained_copies_14d || 0} copias`;
+  }
+  if (vaultShaDisplay) {
+    const sha = vault.sha256 || '';
+    currentVaultSha = sha;
+    if (sha.length > 18) {
+      vaultShaDisplay.textContent = `${sha.slice(0, 10)}...${sha.slice(-8)}`;
+      vaultShaDisplay.title = sha;
+    } else {
+      vaultShaDisplay.textContent = sha || 'Pendiente primer run';
+      vaultShaDisplay.title = sha || '';
+    }
+  }
+}
+
 async function loadAdminMetrics() {
   try {
     const res = await fetch(`${API_BASE}/api/v1/covet/admin/metrics`);
@@ -1760,6 +1826,11 @@ async function loadAdminMetrics() {
     updateServiceChip(chipStatusGroq, chipGroqSub, inte.groq_whisper === 'CONFIGURADO', 'Groq Whisper V3 Turbo Activo');
     updateServiceChip(chipStatusClaude, chipClaudeSub, inte.anthropic_claude === 'CONFIGURADO', 'Claude 3.5 Sonnet Tool Use Activo');
     updateServiceChip(chipStatusN8n, chipN8nSub, true, 'Coolify n8n_app Activo');
+
+    // 5. Bóveda Cifrada Ley 21.719
+    if (data.backup_vault) {
+      updateVaultUI(data.backup_vault);
+    }
 
     showToast('Métricas ejecutivas de SuperAdmin actualizadas en vivo.', 'info');
   } catch (err) {
@@ -1841,6 +1912,73 @@ if (btnAdminSwitchClient) {
 
 if (btnAdminSwitchVet) {
   btnAdminSwitchVet.addEventListener('click', () => switchMainMode('vet'));
+}
+
+if (btnCopyVaultSha) {
+  btnCopyVaultSha.addEventListener('click', async () => {
+    if (!currentVaultSha) {
+      showToast('No hay hash SHA-256 disponible aún.', 'warning');
+      return;
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(currentVaultSha);
+      } else {
+        const temp = document.createElement('textarea');
+        temp.value = currentVaultSha;
+        document.body.appendChild(temp);
+        temp.select();
+        document.execCommand('copy');
+        document.body.removeChild(temp);
+      }
+      if (copyShaIcon) copyShaIcon.textContent = '✓';
+      showToast('Hash SHA-256 copiado al portapapeles.', 'success');
+      setTimeout(() => {
+        if (copyShaIcon) copyShaIcon.textContent = '📋';
+      }, 2000);
+    } catch (err) {
+      console.warn('Fallback copiar hash:', err);
+      showToast(`Hash: ${currentVaultSha.slice(0, 16)}...`, 'info');
+    }
+  });
+}
+
+if (btnAdminTriggerBackup) {
+  btnAdminTriggerBackup.addEventListener('click', async () => {
+    btnAdminTriggerBackup.disabled = true;
+    if (btnVaultTriggerText) btnVaultTriggerText.textContent = '⏳ Cifrando tablas AES-256...';
+    logToAdminConsole('⚡ Iniciando respaldo en caliente + cifrado militar AES-256 (Art. 14Ter Ley 21.719)...');
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/covet/admin/backup-now`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `HTTP ${res.status}`);
+      }
+      const newStatus = await res.json();
+      updateVaultUI(newStatus);
+      logToAdminConsole(
+        `✅ BÓVEDA ACTUALIZADA CON ÉXITO:\n` +
+        `• Archivo: ${newStatus.file_name}\n` +
+        `• Tamaño: ${(newStatus.size_bytes / 1024).toFixed(2)} KB\n` +
+        `• Algoritmo: ${newStatus.encryption} (100,000 iteraciones PBKDF2)\n` +
+        `• SHA-256: ${newStatus.sha256}\n` +
+        `• Copias retenidas (14d): ${newStatus.retained_copies_14d}\n` +
+        `• Ley 21.719: Art. 14Ter CUMPLIDO`
+      );
+      showToast('¡Respaldo cifrado AES-256 ejecutado con éxito!', 'success');
+    } catch (err) {
+      console.error('Error al ejecutar backup:', err);
+      logToAdminConsole(`❌ Fallo en respaldo cifrado: ${err.message}`);
+      showToast(`Error al respaldar: ${err.message}`, 'error');
+    } finally {
+      btnAdminTriggerBackup.disabled = false;
+      if (btnVaultTriggerText) btnVaultTriggerText.textContent = 'Ejecutar Backup Cifrado Ahora';
+    }
+  });
 }
 
 // ========================================================
