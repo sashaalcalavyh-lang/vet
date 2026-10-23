@@ -4,11 +4,17 @@ Persistencia en PostgreSQL, procesamiento SOAP con IA (Groq Whisper + Anthropic 
 e integración con n8n para WhatsApp.
 """
 import os
+import hmac
+import time
 import uuid
+import random
+import shutil
 import datetime
 import logging
-from typing import List, Optional, Any, Dict, Union
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
+import threading
+from typing import List, Optional, Any, Dict, Union, Tuple
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -30,9 +36,91 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-3-5-sonnet-latest")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+# Versiones legales vigentes (se registran junto a cada consentimiento / DPA)
+TERMINOS_VERSION = "v2.0-2026-10"
+DPA_VERSION = "DPA-v1.0-2026-10"
+
+# Pool PostgreSQL dimensionado para ~50 veterinarios concurrentes (20 fijas + 30 de ráfaga).
+# Postgres 16 permite 100 conexiones por defecto: queda margen para psql y migraciones.
+DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
+DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "30"))
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
+    pool_timeout=60,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# Límite de audio aceptado (Groq Whisper admite hasta 25 MB por archivo)
+MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", str(25 * 1024 * 1024)))
+
+# -------------------------------------------------------------
+# 0. Utilidades transversales: LLM con backoff, seguridad admin, pepper HMAC
+# -------------------------------------------------------------
+LLM_MAX_CONCURRENCY = int(os.getenv("LLM_MAX_CONCURRENCY", "8"))
+_llm_semaphore = threading.BoundedSemaphore(LLM_MAX_CONCURRENCY)
+RETRYABLE_STATUS = {429, 500, 502, 503, 504, 529}
+
+
+def llm_post(url: str, *, timeout: float, max_attempts: int = 4, **kwargs: Any) -> httpx.Response:
+    """POST síncrono a Groq/Anthropic con concurrencia acotada y backoff exponencial.
+
+    - Un semáforo global limita las llamadas simultáneas para no gatillar 429 en ráfagas.
+    - Reintenta 429/5xx/529 y errores de red, respetando la cabecera Retry-After.
+    - El sleep entre intentos ocurre fuera del semáforo para no bloquear a otros.
+    - Si se agotan los intentos, relanza la última excepción (nunca falla en silencio).
+    """
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max_attempts + 1):
+        resp: Optional[httpx.Response] = None
+        with _llm_semaphore:
+            try:
+                with httpx.Client(timeout=timeout) as client:
+                    resp = client.post(url, **kwargs)
+            except httpx.TransportError as exc:
+                last_exc = exc
+        if resp is not None:
+            if resp.status_code not in RETRYABLE_STATUS:
+                resp.raise_for_status()
+                return resp
+            last_exc = httpx.HTTPStatusError(
+                f"HTTP {resp.status_code} desde {url}", request=resp.request, response=resp
+            )
+        if attempt == max_attempts:
+            break
+        retry_after: Optional[float] = None
+        if resp is not None:
+            try:
+                retry_after = float(resp.headers.get("retry-after", ""))
+            except ValueError:
+                retry_after = None
+        delay = retry_after if retry_after is not None else min(2 ** attempt, 20) + random.uniform(0, 1)
+        logger.warning(f"[LLM] Intento {attempt}/{max_attempts} fallido ({last_exc}). Reintentando en {delay:.1f}s")
+        time.sleep(min(delay, 30))
+    assert last_exc is not None
+    raise last_exc
+
+
+def require_admin(x_admin_key: Optional[str] = Header(None)) -> None:
+    """Protege endpoints SuperAdmin con la cabecera X-Admin-Key (falla cerrado si no hay clave)."""
+    expected = os.getenv("COVET_ADMIN_KEY", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="COVET_ADMIN_KEY no configurada: endpoints administrativos deshabilitados.")
+    if not x_admin_key or not hmac.compare_digest(x_admin_key, expected):
+        raise HTTPException(status_code=401, detail="Credencial administrativa inválida.")
+
+
+def get_privacy_pepper() -> str:
+    """Pepper HMAC para auditoría ARCO. Sin un secreto real no se ejecutan supresiones."""
+    pepper = os.getenv("SECRET_KEY", "")
+    if len(pepper) < 16:
+        logger.critical("[Ley 21.719] SECRET_KEY ausente o débil: supresiones ARCO bloqueadas.")
+        raise HTTPException(status_code=503, detail="Configuración de seguridad incompleta. Intenta más tarde.")
+    return pepper
 
 # -------------------------------------------------------------
 # 1. Modelos ORM (SQLAlchemy 2.0)
@@ -53,6 +141,9 @@ class TutorDB(Base):
     direccion = Column(Text, nullable=True)
     metodo_captura = Column(String(50), default="FORMULARIO_WEB_TRIAJE")
     actualizado_at = Column(DateTime, default=datetime.datetime.utcnow)
+    # Finalidad separada (Art. 12): IA de terceros + transferencia internacional (Groq/Anthropic, EE.UU.)
+    consentimiento_ia = Column(Boolean, default=False)
+    fecha_consentimiento_ia = Column(DateTime, nullable=True)
 
     pacientes = relationship("PacienteDB", back_populates="tutor")
     fiches = relationship("MedicalFicheDB", back_populates="tutor")
@@ -98,6 +189,7 @@ class CitaDB(Base):
     monto_pago = Column(Float, default=0.0)
     pago_estado = Column(String(30), default="PENDING") # PENDING, SIMULATED_PAID, PAID_GATEWAY
     pago_metodo = Column(String(30), nullable=True)
+    clinica_slug = Column(String(60), nullable=True, index=True)  # Marca blanca que originó la reserva
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     paciente = relationship("PacienteDB", back_populates="citas")
     fiches = relationship("MedicalFicheDB", back_populates="cita")
@@ -114,6 +206,8 @@ class MedicalFicheDB(Base):
     error_detalle = Column(Text, nullable=True)
     fecha_creacion = Column(DateTime, default=datetime.datetime.utcnow)
     fecha_confirmacion = Column(DateTime, nullable=True)
+    n8n_intentos = Column(Integer, default=0)
+    n8n_ultimo_intento = Column(DateTime, nullable=True)
 
     tutor = relationship("TutorDB", back_populates="fiches")
     paciente = relationship("PacienteDB", back_populates="fiches")
@@ -128,6 +222,32 @@ class AuditoriaArcoDB(Base):
     telefono_hmac = Column(Text, nullable=False)
     accion_ejecutada = Column(String(50), default="SUPRESION_ANONIMIZACION")
     fecha_creacion = Column(DateTime, default=datetime.datetime.utcnow)
+
+class ClinicaMarcaDB(Base):
+    """Marca blanca por veterinario/clínica: identidad visual + identidad legal del Responsable.
+
+    Bajo la Ley 21.719 el veterinario es el Responsable del tratamiento y CoVet el Encargado;
+    por eso la razón social, RUT y correo de privacidad se muestran al tutor en el aviso legal.
+    """
+    __tablename__ = "clinicas_marca"
+    id = Column(Integer, primary_key=True)
+    slug = Column(String(60), unique=True, nullable=False, index=True)
+    nombre_fantasia = Column(String(120), nullable=False)
+    razon_social = Column(String(150), nullable=True)
+    rut_responsable = Column(String(20), nullable=True)
+    email_privacidad = Column(String(120), nullable=True)
+    color_primario = Column(String(7), default="#0D9488")
+    color_secundario = Column(String(7), default="#0F766E")
+    logo_url = Column(Text, nullable=True)
+    whatsapp_contacto = Column(String(20), nullable=True)
+    mensaje_bienvenida = Column(String(200), nullable=True)
+    plan = Column(String(30), default="PRO_WHITE_LABEL")
+    activo = Column(Boolean, default=True)
+    dpa_aceptado = Column(Boolean, default=False)
+    fecha_dpa = Column(DateTime, nullable=True)
+    version_dpa = Column(String(30), nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 def run_safe_migrations(engine_instance):
     """
@@ -173,6 +293,13 @@ def run_safe_migrations(engine_instance):
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS fecha_consentimiento TIMESTAMP;"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS version_terminos VARCHAR(20) DEFAULT 'v1.0-2026';"))
             conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS activo_whatsapp BOOLEAN DEFAULT TRUE;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS consentimiento_ia BOOLEAN DEFAULT FALSE;"))
+            conn.execute(text("ALTER TABLE tutores ADD COLUMN IF NOT EXISTS fecha_consentimiento_ia TIMESTAMP;"))
+
+            # Cola de reintentos n8n y trazabilidad de marca blanca
+            conn.execute(text("ALTER TABLE medical_fiches ADD COLUMN IF NOT EXISTS n8n_intentos INTEGER DEFAULT 0;"))
+            conn.execute(text("ALTER TABLE medical_fiches ADD COLUMN IF NOT EXISTS n8n_ultimo_intento TIMESTAMP;"))
+            conn.execute(text("ALTER TABLE citas ADD COLUMN IF NOT EXISTS clinica_slug VARCHAR(60);"))
 
             # Tabla aislada de auditoría ARCO (Defensa legal con HMAC)
             conn.execute(text("""
@@ -216,6 +343,7 @@ def run_safe_migrations(engine_instance):
                         direccion = NULL,
                         consentimiento = FALSE,
                         consentimiento_ley21719 = FALSE,
+                        consentimiento_ia = FALSE,
                         activo_whatsapp = FALSE,
                         actualizado_at = CURRENT_TIMESTAMP
                     WHERE id = v_tutor_id;
@@ -420,13 +548,16 @@ class SOAPFicheSchema(BaseModel):
 # -------------------------------------------------------------
 # 3. Pipeline de IA en Segundo Plano (Groq Whisper + Claude Tool Use)
 # -------------------------------------------------------------
-def process_voice_fiche(task_id: uuid.UUID, file_path: str):
+def process_voice_fiche(task_id: uuid.UUID, audio_bytes: bytes, filename: str):
     """
     Procesa el audio grabado en background:
     1. Transcribe con Groq Whisper Large V3.
     2. Estructura el SOAP con Anthropic Claude usando Tool Use para garantizar JSON estricto.
     3. Deja la ficha en estado READY_FOR_REVIEW (esperando confirmación humana).
-    4. Elimina el archivo temporal en finally:.
+
+    Ley 21.719 (minimización): el audio solo existe en memoria RAM; nunca toca el disco.
+    Si el proceso muere, el audio desaparece con él y la ficha se marca FAILED al reiniciar
+    (recover_interrupted_fiches) para que el frontend la reenvíe desde su búfer IndexedDB.
     """
     db = SessionLocal()
     fiche = None
@@ -445,11 +576,8 @@ def process_voice_fiche(task_id: uuid.UUID, file_path: str):
             raise ValueError("GROQ_API_KEY no configurada en las variables de entorno.")
 
         logger.info(f"[Pipeline {task_id}] Transcribiendo audio con Groq Whisper...")
-        with open(file_path, "rb") as audio_file:
-            files = {
-                "file": (os.path.basename(file_path), audio_file.read(), "application/octet-stream")
-            }
-        
+        files = {"file": (filename, audio_bytes, "application/octet-stream")}
+
         data = {
             "model": "whisper-large-v3-turbo",
             "language": "es",
@@ -457,16 +585,15 @@ def process_voice_fiche(task_id: uuid.UUID, file_path: str):
         }
         headers = {"Authorization": f"Bearer {groq_key}"}
 
-        with httpx.Client(timeout=60.0) as client:
-            groq_resp = client.post(
-                "https://api.groq.com/openai/v1/audio/transcriptions",
-                files=files,
-                data=data,
-                headers=headers
-            )
-            groq_resp.raise_for_status()
-            transcription_data = groq_resp.json()
-            transcript_text = transcription_data.get("text", "").strip()
+        groq_resp = llm_post(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            timeout=60.0,
+            files=files,
+            data=data,
+            headers=headers
+        )
+        transcription_data = groq_resp.json()
+        transcript_text = transcription_data.get("text", "").strip()
 
         if not transcript_text:
             raise ValueError("Groq no detectó texto en el audio enviado.")
@@ -516,14 +643,13 @@ def process_voice_fiche(task_id: uuid.UUID, file_path: str):
             "content-type": "application/json"
         }
 
-        with httpx.Client(timeout=60.0) as client:
-            anthropic_resp = client.post(
-                "https://api.anthropic.com/v1/messages",
-                json=anthropic_payload,
-                headers=anthropic_headers
-            )
-            anthropic_resp.raise_for_status()
-            claude_result = anthropic_resp.json()
+        anthropic_resp = llm_post(
+            "https://api.anthropic.com/v1/messages",
+            timeout=60.0,
+            json=anthropic_payload,
+            headers=anthropic_headers
+        )
+        claude_result = anthropic_resp.json()
 
         # Extraer llamada a herramienta
         content_blocks = claude_result.get("content", [])
@@ -552,13 +678,149 @@ def process_voice_fiche(task_id: uuid.UUID, file_path: str):
             db.commit()
     finally:
         db.close()
-        # Eliminar archivo temporal de audio para proteger almacenamiento SSD
-        if os.path.exists(file_path):
+
+
+# -------------------------------------------------------------
+# 3b. Resiliencia: recuperación de fichas interrumpidas y cola de reintentos n8n
+# -------------------------------------------------------------
+LEGACY_AUDIO_DIRS = ("/tmp/covet_audios", "/tmp/covet_client_audios")
+N8N_RETRY_INTERVAL_S = int(os.getenv("N8N_RETRY_INTERVAL_S", "120"))
+N8N_MAX_INTENTOS = int(os.getenv("N8N_MAX_INTENTOS", "10"))
+
+
+def purge_legacy_audio_dirs() -> None:
+    """Elimina audios huérfanos de versiones anteriores que escribían en /tmp (Ley 21.719)."""
+    for path in LEGACY_AUDIO_DIRS:
+        if os.path.isdir(path):
             try:
-                os.remove(file_path)
-                logger.info(f"[Pipeline {task_id}] Archivo temporal eliminado: {file_path}")
-            except Exception as err:
-                logger.warning(f"[Pipeline {task_id}] No se pudo borrar archivo temporal: {err}")
+                shutil.rmtree(path)
+                logger.info(f"[Ley 21.719] Directorio de audios huérfanos eliminado: {path}")
+            except OSError as err:
+                logger.error(f"[Ley 21.719] No se pudo eliminar {path}: {err}")
+
+
+def recover_interrupted_fiches() -> None:
+    """Marca FAILED las fichas que quedaron PENDING/PROCESSING por un reinicio del proceso.
+
+    El pipeline corre en el mismo proceso (un solo worker uvicorn): al arrancar, cualquier ficha
+    en esos estados quedó huérfana. Marcarla FAILED permite al frontend reenviar el audio.
+    """
+    db = SessionLocal()
+    try:
+        n = db.query(MedicalFicheDB).filter(
+            MedicalFicheDB.estado_procesamiento.in_(["PENDING", "PROCESSING"])
+        ).update(
+            {
+                MedicalFicheDB.estado_procesamiento: "FAILED",
+                MedicalFicheDB.error_detalle: "INTERRUPTED_BY_RESTART: reenvía el audio desde el dispositivo.",
+            },
+            synchronize_session=False,
+        )
+        db.commit()
+        if n:
+            logger.warning(f"[Recovery] {n} ficha(s) interrumpidas por reinicio marcadas como FAILED.")
+    except Exception as err:
+        db.rollback()
+        logger.error(f"[Recovery] Error recuperando fichas interrumpidas: {err}")
+    finally:
+        db.close()
+
+
+def dispatch_fiche_to_n8n(db: Session, fiche: "MedicalFicheDB") -> Tuple[bool, Optional[str]]:
+    """Despacha una ficha confirmada a n8n y actualiza su estado (sin hacer commit).
+
+    Respeta la Ley 21.719: no envía si el tutor fue anonimizado o revocó WhatsApp.
+    """
+    tutor = db.get(TutorDB, fiche.tutor_id) if fiche.tutor_id else None
+    paciente = db.get(PacienteDB, fiche.paciente_id) if fiche.paciente_id else None
+
+    if tutor is None or paciente is None or not tutor.telefono:
+        fiche.estado_procesamiento = "CONFIRMED_N8N_FAILED"
+        fiche.error_detalle = "Sin tutor/teléfono vigente (posible supresión ARCO). No se envía WhatsApp."
+        return False, fiche.error_detalle
+
+    if tutor.activo_whatsapp is False:
+        fiche.estado_procesamiento = "CONFIRMED_NO_WHATSAPP"
+        fiche.error_detalle = None
+        return False, "El tutor no autorizó o revocó comunicaciones por WhatsApp (Ley 21.719)."
+
+    payload = {
+        "fiche_id": str(fiche.id),
+        "tutor_id": tutor.id,
+        "paciente_id": paciente.id,
+        "tutor_nombre": tutor.nombre,
+        "tutor_telefono": tutor.telefono,
+        "paciente_nombre": paciente.nombre,
+        "especie": paciente.especie,
+        "raza": paciente.raza,
+        "peso_kg": paciente.peso_kg,
+        "fecha_confirmacion": fiche.fecha_confirmacion.isoformat() if fiche.fecha_confirmacion else None,
+        "soap": fiche.json_estructurado,
+    }
+
+    fiche.n8n_intentos = (fiche.n8n_intentos or 0) + 1
+    fiche.n8n_ultimo_intento = datetime.datetime.utcnow()
+    error: Optional[str] = None
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            resp = client.post(N8N_WEBHOOK_URL, json=payload)
+        if resp.is_success:
+            fiche.estado_procesamiento = "CONFIRMED_AND_SENT"
+            fiche.error_detalle = None
+            logger.info(f"[n8n {fiche.id}] Despachado (intento {fiche.n8n_intentos}).")
+            return True, None
+        error = f"n8n respondió HTTP {resp.status_code}"
+    except httpx.HTTPError as exc:
+        error = f"No se pudo conectar a n8n: {exc}"
+
+    agotado = fiche.n8n_intentos >= N8N_MAX_INTENTOS
+    fiche.estado_procesamiento = "CONFIRMED_N8N_FAILED" if agotado else "CONFIRMED_N8N_PENDING"
+    fiche.error_detalle = error
+    logger.warning(f"[n8n {fiche.id}] Intento {fiche.n8n_intentos}/{N8N_MAX_INTENTOS} fallido: {error}")
+    return False, error
+
+
+def retry_pending_n8n_dispatches(max_batch: int = 20) -> Dict[str, int]:
+    """Reintenta fichas CONFIRMED_N8N_PENDING con backoff exponencial (2^n min, tope 6 h).
+
+    Usa SELECT ... FOR UPDATE SKIP LOCKED para que dos ejecuciones nunca envíen la misma ficha.
+    """
+    db = SessionLocal()
+    stats = {"revisadas": 0, "enviadas": 0, "pospuestas": 0, "fallidas": 0}
+    try:
+        ahora = datetime.datetime.utcnow()
+        candidatas = (
+            db.query(MedicalFicheDB)
+            .filter(MedicalFicheDB.estado_procesamiento == "CONFIRMED_N8N_PENDING")
+            .order_by(MedicalFicheDB.fecha_confirmacion)
+            .limit(max_batch)
+            .with_for_update(skip_locked=True)
+            .all()
+        )
+        for fiche in candidatas:
+            stats["revisadas"] += 1
+            intentos = fiche.n8n_intentos or 0
+            espera = datetime.timedelta(minutes=min(2 ** intentos, 360))
+            if fiche.n8n_ultimo_intento and ahora < fiche.n8n_ultimo_intento + espera:
+                stats["pospuestas"] += 1
+                continue
+            ok, _ = dispatch_fiche_to_n8n(db, fiche)
+            stats["enviadas" if ok else "fallidas"] += 1
+        db.commit()
+    except Exception as err:
+        db.rollback()
+        logger.error(f"[n8n Retry] Error en ciclo de reintentos: {err}")
+    finally:
+        db.close()
+    if stats["revisadas"]:
+        logger.info(f"[n8n Retry] {stats}")
+    return stats
+
+
+def n8n_retry_loop(stop_event: threading.Event) -> None:
+    """Hilo daemon que ejecuta la cola de reintentos cada N8N_RETRY_INTERVAL_S segundos."""
+    while not stop_event.wait(N8N_RETRY_INTERVAL_S):
+        retry_pending_n8n_dispatches()
 
 # -------------------------------------------------------------
 # 4. Inicialización de la Aplicación FastAPI
@@ -588,9 +850,23 @@ def get_db():
     finally:
         db.close()
 
+_n8n_stop_event = threading.Event()
+
+
 @app.on_event("startup")
 def on_startup():
     init_db()
+    purge_legacy_audio_dirs()
+    recover_interrupted_fiches()
+    threading.Thread(
+        target=n8n_retry_loop, args=(_n8n_stop_event,), name="n8n-retry", daemon=True
+    ).start()
+    logger.info(f"[Startup] Pool DB {DB_POOL_SIZE}+{DB_MAX_OVERFLOW} | LLM concurrencia {LLM_MAX_CONCURRENCY} | n8n retry cada {N8N_RETRY_INTERVAL_S}s")
+
+
+@app.on_event("shutdown")
+def on_shutdown():
+    _n8n_stop_event.set()
 
 @app.get("/")
 def root():
@@ -638,18 +914,13 @@ async def transcribir_audio_consulta(
     contents = await file.read()
     if not contents or len(contents) == 0:
         raise HTTPException(status_code=400, detail="El archivo de audio está vacío.")
+    if len(contents) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="El audio supera el límite de 25 MB.")
 
-    # Guardado temporal seguro
-    temp_dir = "/tmp/covet_audios"
-    os.makedirs(temp_dir, exist_ok=True)
+    # Ley 21.719 (minimización): el audio se procesa solo en RAM, nunca se escribe a disco.
     fiche_id = uuid.uuid4()
-
     filename = file.filename or "dictado.webm"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
-    temp_file_path = os.path.join(temp_dir, f"{fiche_id}.{ext}")
-
-    with open(temp_file_path, "wb") as f:
-        f.write(contents)
 
     # Crear registro inicial en PostgreSQL
     fiche = MedicalFicheDB(
@@ -662,7 +933,7 @@ async def transcribir_audio_consulta(
     db.refresh(fiche)
 
     # Agendar proceso en background sin bloquear hilo principal
-    background_tasks.add_task(process_voice_fiche, fiche.id, temp_file_path)
+    background_tasks.add_task(process_voice_fiche, fiche.id, contents, f"{fiche_id}.{ext}")
 
     return {
         "task_id": str(fiche.id),
@@ -780,43 +1051,21 @@ def confirmar_y_enviar_ficha(
     fiche.paciente_id = paciente.id
     fiche.json_estructurado = payload.model_dump()
     fiche.fecha_confirmacion = now
+    fiche.n8n_intentos = 0
+    fiche.n8n_ultimo_intento = None
+    db.commit()
 
-    # 4. Disparo a n8n con Tolerancia a Fallos
-    n8n_dispatched = False
-    n8n_error = None
-
-    n8n_payload = {
-        "fiche_id": str(fiche.id),
-        "tutor_id": tutor.id,
-        "paciente_id": paciente.id,
-        "tutor_nombre": tutor.nombre,
-        "tutor_telefono": tutor.telefono,
-        "paciente_nombre": paciente.nombre,
-        "especie": paciente.especie,
-        "raza": paciente.raza,
-        "peso_kg": paciente.peso_kg,
-        "fecha_confirmacion": now.isoformat(),
-        "soap": payload.model_dump()
-    }
-
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            resp = client.post(N8N_WEBHOOK_URL, json=n8n_payload)
-            if 200 <= resp.status_code < 300:
-                fiche.estado_procesamiento = "CONFIRMED_AND_SENT"
-                n8n_dispatched = True
-                logger.info(f"[Confirm {task_id}] Webhook n8n despachado exitosamente (HTTP {resp.status_code}).")
-            else:
-                fiche.estado_procesamiento = "CONFIRMED_N8N_PENDING"
-                n8n_error = f"n8n respondió con código HTTP {resp.status_code}: {resp.text}"
-                logger.warning(f"[Confirm {task_id}] n8n respondió con error: {n8n_error}")
-    except Exception as e:
-        fiche.estado_procesamiento = "CONFIRMED_N8N_PENDING"
-        n8n_error = f"No se pudo conectar a n8n: {str(e)}"
-        logger.warning(f"[Confirm {task_id}] Excepción al contactar n8n: {n8n_error}")
-
+    # 4. Disparo a n8n con tolerancia a fallos: si falla, queda en la cola de reintentos automáticos
+    n8n_dispatched, n8n_error = dispatch_fiche_to_n8n(db, fiche)
     db.commit()
     db.refresh(fiche)
+
+    if n8n_dispatched:
+        message = "Ficha médica confirmada y WhatsApp despachado."
+    elif fiche.estado_procesamiento == "CONFIRMED_NO_WHATSAPP":
+        message = "Ficha guardada. El tutor no autorizó WhatsApp: entrega la receta por otro canal."
+    else:
+        message = "Ficha médica guardada. WhatsApp en cola de reintento automático (n8n no disponible)."
 
     return {
         "status": "success",
@@ -826,11 +1075,7 @@ def confirmar_y_enviar_ficha(
         "paciente_id": paciente.id,
         "n8n_dispatched": n8n_dispatched,
         "n8n_detail": n8n_error,
-        "message": (
-            "Ficha médica confirmada y WhatsApp despachado."
-            if n8n_dispatched
-            else "Ficha médica guardada en PostgreSQL. Envío de WhatsApp en cola (n8n no disponible)."
-        )
+        "message": message
     }
 
 # -------------------------------------------------------------
@@ -1141,6 +1386,9 @@ class TriageExecuteRequest(BaseModel):
     motivo_resumido: str = Field(..., example="Vómito agudo felino")
     first_aid_protocol_id: str = Field(default="PREVENTIVO_RUTINA", example="GI_VOMITO_AGUDO")
     consentimiento_ley21719: bool = Field(default=False, description="Consentimiento expreso conforme a Ley 21.719 de Protección de Datos")
+    consentimiento_whatsapp: bool = Field(default=False, description="Finalidad separada: recetas y recordatorios por WhatsApp")
+    consentimiento_ia: bool = Field(default=False, description="Finalidad separada: IA de terceros con transferencia internacional (EE.UU.)")
+    clinica_slug: Optional[str] = Field(default=None, max_length=60, description="Marca blanca desde la que se originó la reserva")
 
 # -------------------------------------------------------------
 # 10. Los 3 Endpoints del Agente Autónomo de Clientes
@@ -1149,6 +1397,7 @@ class TriageExecuteRequest(BaseModel):
 async def client_intent(
     texto: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
+    consentimiento_ia: bool = Form(False),
     db: Session = Depends(get_db)
 ):
     """
@@ -1157,11 +1406,19 @@ async def client_intent(
     - Transcribe audio con Groq whisper-large-v3-turbo (si falta clave, responde error claro).
     - Evalúa urgencia, especie, motivo y 3 preguntas dinámicas con Anthropic Claude Tool Use.
     - Asigna protocolo pre-aprobado y calcula agenda híbrida.
+
+    Ley 21.719 (Art. 12 y transferencia internacional): sin `consentimiento_ia=true` no se envía
+    nada a Groq/Anthropic; el triaje se resuelve con reglas clínicas locales y el audio se rechaza.
     """
     consulta_texto = (texto or "").strip()
 
     # Transcripción con Groq si se sube archivo de audio
     if file and file.filename:
+        if not consentimiento_ia:
+            raise HTTPException(
+                status_code=400,
+                detail="Para enviar audio debes autorizar el procesamiento asistido por IA. También puedes escribir tu consulta en texto."
+            )
         groq_key = os.getenv("GROQ_API_KEY", "")
         if not groq_key:
             return JSONResponse(
@@ -1172,48 +1429,32 @@ async def client_intent(
             )
 
         contents = await file.read()
+        if contents and len(contents) > MAX_AUDIO_BYTES:
+            raise HTTPException(status_code=413, detail="El audio supera el límite de 25 MB.")
         if contents and len(contents) > 0:
-            temp_dir = "/tmp/covet_client_audios"
-            os.makedirs(temp_dir, exist_ok=True)
+            # Ley 21.719 (minimización): la voz del tutor se procesa solo en RAM, sin rastro en disco.
             filename = file.filename or "cliente_audio.webm"
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "webm"
-            temp_path = os.path.join(temp_dir, f"{uuid.uuid4()}.{ext}")
-
-            with open(temp_path, "wb") as f_out:
-                f_out.write(contents)
-
             try:
-                with open(temp_path, "rb") as af:
-                    files_payload = {
-                        "file": (os.path.basename(temp_path), af.read(), "application/octet-stream")
-                    }
-                data_payload = {
-                    "model": "whisper-large-v3-turbo",
-                    "language": "es",
-                    "response_format": "json"
-                }
-                headers = {"Authorization": f"Bearer {groq_key}"}
-
-                with httpx.Client(timeout=45.0) as client:
-                    resp = client.post(
-                        "https://api.groq.com/openai/v1/audio/transcriptions",
-                        files=files_payload,
-                        data=data_payload,
-                        headers=headers
-                    )
-                    resp.raise_for_status()
-                    transcripcion = resp.json().get("text", "").strip()
-                    if transcripcion:
-                        consulta_texto = f"{consulta_texto} {transcripcion}".strip() if consulta_texto else transcripcion
+                resp = await run_in_threadpool(
+                    llm_post,
+                    "https://api.groq.com/openai/v1/audio/transcriptions",
+                    timeout=45.0,
+                    max_attempts=3,
+                    files={"file": (f"{uuid.uuid4()}.{ext}", contents, "application/octet-stream")},
+                    data={
+                        "model": "whisper-large-v3-turbo",
+                        "language": "es",
+                        "response_format": "json"
+                    },
+                    headers={"Authorization": f"Bearer {groq_key}"}
+                )
+                transcripcion = resp.json().get("text", "").strip()
+                if transcripcion:
+                    consulta_texto = f"{consulta_texto} {transcripcion}".strip() if consulta_texto else transcripcion
             except Exception as e:
                 logger.error(f"Error en transcripción Groq: {e}")
-                raise HTTPException(status_code=502, detail=f"Error transcribiendo audio con Groq: {str(e)}")
-            finally:
-                if os.path.exists(temp_path):
-                    try:
-                        os.remove(temp_path)
-                    except Exception:
-                        pass
+                raise HTTPException(status_code=502, detail="No pudimos transcribir el audio. Intenta de nuevo o escribe tu consulta.")
 
     if not consulta_texto:
         raise HTTPException(
@@ -1225,7 +1466,7 @@ async def client_intent(
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     ia_output = None
 
-    if anthropic_key:
+    if anthropic_key and consentimiento_ia:
         tool_definition = {
             "name": "analizar_intencion_tutor",
             "description": "Extrae el triaje clínico, nivel de urgencia, especie y selecciona el protocolo pre-aprobado.",
@@ -1271,26 +1512,30 @@ async def client_intent(
         }
 
         try:
-            with httpx.Client(timeout=20.0) as client:
-                res = client.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={
-                        "x-api-key": anthropic_key,
-                        "anthropic-version": "2023-06-01",
-                        "content-type": "application/json"
-                    },
-                    json=anthropic_payload
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    for block in data.get("content", []):
-                        if block.get("type") == "tool_use" and block.get("name") == "analizar_intencion_tutor":
-                            ia_output = block.get("input", {})
-                            break
+            # Llamada bloqueante enviada al threadpool: no congela el event loop de FastAPI
+            res = await run_in_threadpool(
+                llm_post,
+                "https://api.anthropic.com/v1/messages",
+                timeout=20.0,
+                max_attempts=2,
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json=anthropic_payload
+            )
+            data = res.json()
+            for block in data.get("content", []):
+                if block.get("type") == "tool_use" and block.get("name") == "analizar_intencion_tutor":
+                    ia_output = block.get("input", {})
+                    break
         except Exception as e:
             logger.warning(f"Error consultando Anthropic Claude para triaje: {e}")
 
-    # Fallback Determinístico Clínico si falla la API
+    motor_triaje = "IA_CLAUDE" if ia_output else "REGLAS_LOCALES"
+
+    # Fallback Determinístico Clínico si falla la API o no hay consentimiento de IA
     if not ia_output:
         texto_l = consulta_texto.lower()
         if any(w in texto_l for w in ["respira", "ahog", "asfix", "jade", "pecho"]):
@@ -1364,7 +1609,8 @@ async def client_intent(
             "¿Tiene sus vacunas al día?"
         ]),
         "first_aid_protocol_id": pid,
-        "available_schedule": available_schedule
+        "available_schedule": available_schedule,
+        "motor_triaje": motor_triaje
     }
 
 
@@ -1380,6 +1626,13 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
     clean_tutor_name = req.tutor_nombre.strip() if req.tutor_nombre else "Tutor CoVet"
     clean_pet_name = req.paciente_nombre.strip() if req.paciente_nombre else "Mascota"
 
+    # Base de licitud obligatoria: sin aceptación del aviso no se crean datos personales
+    if not req.consentimiento_ley21719:
+        raise HTTPException(
+            status_code=400,
+            detail="Debes aceptar el tratamiento de datos para la atención clínica (Ley 21.719) para reservar."
+        )
+
     # Acción Agéntica 1: Cruce de Historial por WhatsApp
     tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
     paciente_reconocido = False
@@ -1392,12 +1645,15 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         if clean_tutor_name != "Tutor CoVet" and tutor.nombre != clean_tutor_name:
             tutor.nombre = clean_tutor_name
         
-        # Registro trazable Ley 21.719 si otorga consentimiento
-        if req.consentimiento_ley21719:
-            tutor.consentimiento_ley21719 = True
-            tutor.fecha_consentimiento = now
-            tutor.version_terminos = "v1.0-2026"
-            tutor.activo_whatsapp = True
+        # Registro trazable Ley 21.719: cada finalidad queda registrada por separado
+        tutor.consentimiento_ley21719 = True
+        tutor.fecha_consentimiento = now
+        tutor.version_terminos = TERMINOS_VERSION
+        tutor.activo_whatsapp = req.consentimiento_whatsapp
+        tutor.consentimiento_ia = req.consentimiento_ia
+        tutor.fecha_consentimiento_ia = now if req.consentimiento_ia else None
+        tutor.metodo_captura = "FORMULARIO_WEB_TRIAJE"
+        tutor.actualizado_at = now
         db.commit()
 
         paciente = db.query(PacienteDB).filter(
@@ -1438,10 +1694,13 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         tutor = TutorDB(
             nombre=clean_tutor_name,
             telefono=clean_phone,
-            consentimiento_ley21719=req.consentimiento_ley21719,
-            fecha_consentimiento=now if req.consentimiento_ley21719 else None,
-            version_terminos="v1.0-2026",
-            activo_whatsapp=True
+            consentimiento_ley21719=True,
+            fecha_consentimiento=now,
+            version_terminos=TERMINOS_VERSION,
+            activo_whatsapp=req.consentimiento_whatsapp,
+            consentimiento_ia=req.consentimiento_ia,
+            fecha_consentimiento_ia=now if req.consentimiento_ia else None,
+            metodo_captura="FORMULARIO_WEB_TRIAJE"
         )
         db.add(tutor)
         db.commit()
@@ -1458,7 +1717,10 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(paciente)
 
-    logger.info(f"[Triaje] Ejecutado para tutor {mask_phone(clean_phone)} | Mascota: {clean_pet_name} | Consentimiento Ley 21.719: {req.consentimiento_ley21719}")
+    logger.info(
+        f"[Triaje] Tutor {mask_phone(clean_phone)} | Mascota: {clean_pet_name} | "
+        f"Consentimientos -> clínico: True, WhatsApp: {req.consentimiento_whatsapp}, IA: {req.consentimiento_ia}"
+    )
 
     # Acción Agéntica 2: Bloqueo Temporal HOLD_15_MIN
     modalidad_clean = req.modalidad.upper() if req.modalidad else "DOMICILIO"
@@ -1512,6 +1774,7 @@ def triage_execute(req: TriageExecuteRequest, db: Session = Depends(get_db)):
         monto_clp=monto_clp,
         pagado=False,
         hold_expires_at=hold_expires_at,
+        clinica_slug=(req.clinica_slug or None),
         # Campos previos para retrocompatibilidad
         tipo_atencion=modalidad_clean,
         estado_cita="HOLD_15_MIN",
@@ -1810,6 +2073,8 @@ def exportar_datos_personales(telefono: str, db: Session = Depends(get_db)):
             "fecha_consentimiento": tutor.fecha_consentimiento.isoformat() if tutor.fecha_consentimiento else None,
             "version_terminos": tutor.version_terminos,
             "activo_notificaciones_whatsapp": tutor.activo_whatsapp,
+            "consentimiento_ia_transferencia_internacional": tutor.consentimiento_ia,
+            "fecha_consentimiento_ia": tutor.fecha_consentimiento_ia.isoformat() if tutor.fecha_consentimiento_ia else None,
             "fecha_registro": tutor.created_at.isoformat() if tutor.created_at else None
         },
         "pacientes": pacientes_data
@@ -1835,8 +2100,9 @@ def ejercer_derecho_supresion_oposicion(req: PrivacyOptOutRequest, db: Session =
     ahora = datetime.datetime.utcnow()
 
     if solicitud == "supresion":
-        # Ejecución segura en PostgreSQL con cálculo de HMAC y registro inmutable en auditoria_arco
-        secret_pepper = os.getenv("SECRET_KEY", "covet-secret-pepper-2026")
+        # Ejecución atómica en PostgreSQL: HMAC + registro inmutable en auditoria_arco + anonimización.
+        # Si falla, NO se emite comprobante: un ticket sin registro de auditoría no tiene valor legal.
+        secret_pepper = get_privacy_pepper()
         try:
             ticket = db.execute(
                 text("SELECT anonimizar_tutor(:tel, :pepper);"),
@@ -1844,15 +2110,12 @@ def ejercer_derecho_supresion_oposicion(req: PrivacyOptOutRequest, db: Session =
             ).scalar()
             db.commit()
         except Exception as err:
-            logger.error(f"Error ejecutando anonimizar_tutor en DB: {err}")
-            tutor.nombre = "ANONIMIZADO"
-            tutor.telefono = None
-            tutor.email = None
-            tutor.direccion = None
-            tutor.consentimiento_ley21719 = False
-            tutor.activo_whatsapp = False
-            db.commit()
-            ticket = f"BAJA-{uuid.uuid4().hex[:8].upper()}"
+            db.rollback()
+            logger.error(f"[Ley 21.719] Error ejecutando anonimizar_tutor: {err}")
+            raise HTTPException(
+                status_code=500,
+                detail="No pudimos completar la supresión. Tu solicitud no fue procesada; intenta nuevamente."
+            )
 
         logger.info(f"[Privacidad Ley 21.719] Supresión/Anonimización ejecutada con HMAC para {mask_phone(clean_phone)}. Ticket: {ticket}")
         return {
@@ -1942,7 +2205,7 @@ def obtener_metricas_superadmin(db: Session = Depends(get_db)):
     }
 
 
-@app.post("/api/v1/covet/admin/privacy/purge-audit")
+@app.post("/api/v1/covet/admin/privacy/purge-audit", dependencies=[Depends(require_admin)])
 def purgar_auditoria_legal(anios: int = 3, db: Session = Depends(get_db)):
     """
     Purga registros de auditoría ARCO que hayan superado el plazo legal de prescripción
@@ -1967,4 +2230,111 @@ def purgar_auditoria_legal(anios: int = 3, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/v1/covet/admin/n8n/retry", dependencies=[Depends(require_admin)])
+def reintentar_n8n_manual():
+    """Fuerza un ciclo de la cola de reintentos n8n (útil tras restablecer n8n)."""
+    return {"status": "OK", "resultado": retry_pending_n8n_dispatches()}
 
+
+# =============================================================
+# 13. MARCA BLANCA (WHITE-LABEL) POR VETERINARIO
+# =============================================================
+HEX_COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
+SLUG_PATTERN = r"^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$"
+
+
+class BrandingUpsert(BaseModel):
+    """Configuración de marca que el SuperAdmin asigna a un veterinario con plan white-label."""
+    nombre_fantasia: str = Field(..., min_length=2, max_length=120, example="Dra. Carolina · Veterinaria a Domicilio")
+    razon_social: Optional[str] = Field(None, max_length=150, example="Carolina Rojas SpA")
+    rut_responsable: Optional[str] = Field(None, max_length=20, example="76.123.456-7")
+    email_privacidad: Optional[str] = Field(None, max_length=120, example="privacidad@dracarolina.cl")
+    color_primario: str = Field("#0D9488", pattern=HEX_COLOR_PATTERN)
+    color_secundario: str = Field("#0F766E", pattern=HEX_COLOR_PATTERN)
+    logo_url: Optional[str] = Field(None, max_length=500, pattern=r"^https://")
+    whatsapp_contacto: Optional[str] = Field(None, max_length=20)
+    mensaje_bienvenida: Optional[str] = Field(None, max_length=200)
+    plan: str = Field("PRO_WHITE_LABEL", max_length=30)
+    activo: bool = True
+    dpa_aceptado: bool = Field(False, description="El veterinario firmó el Contrato de Encargo de Tratamiento (DPA)")
+
+
+def _branding_public(m: ClinicaMarcaDB) -> Dict[str, Any]:
+    """Campos públicos: identidad visual + identidad legal del Responsable (exigida por Ley 21.719)."""
+    return {
+        "slug": m.slug,
+        "nombre_fantasia": m.nombre_fantasia,
+        "razon_social": m.razon_social,
+        "rut_responsable": m.rut_responsable,
+        "email_privacidad": m.email_privacidad,
+        "color_primario": m.color_primario,
+        "color_secundario": m.color_secundario,
+        "logo_url": m.logo_url,
+        "whatsapp_contacto": m.whatsapp_contacto,
+        "mensaje_bienvenida": m.mensaje_bienvenida,
+        "dpa_vigente": bool(m.dpa_aceptado),
+    }
+
+
+@app.get("/api/v1/covet/branding/{slug}")
+def obtener_branding(slug: str, db: Session = Depends(get_db)):
+    """Público: devuelve la marca del veterinario para tematizar la app del tutor (?vet=slug)."""
+    marca = db.query(ClinicaMarcaDB).filter(
+        ClinicaMarcaDB.slug == slug.lower().strip(), ClinicaMarcaDB.activo.is_(True)
+    ).first()
+    if not marca:
+        raise HTTPException(status_code=404, detail="Marca no encontrada o inactiva.")
+    return _branding_public(marca)
+
+
+@app.get("/api/v1/covet/admin/branding", dependencies=[Depends(require_admin)])
+def listar_branding(db: Session = Depends(get_db)):
+    """SuperAdmin: lista todas las marcas blancas con su estado de plan y DPA."""
+    marcas = db.query(ClinicaMarcaDB).order_by(ClinicaMarcaDB.created_at.desc()).all()
+    return [
+        {**_branding_public(m), "plan": m.plan, "activo": m.activo,
+         "fecha_dpa": m.fecha_dpa.isoformat() if m.fecha_dpa else None, "version_dpa": m.version_dpa}
+        for m in marcas
+    ]
+
+
+@app.put("/api/v1/covet/admin/branding/{slug}", dependencies=[Depends(require_admin)])
+def upsert_branding(slug: str, req: BrandingUpsert, db: Session = Depends(get_db)):
+    """SuperAdmin: crea o actualiza la marca blanca de un veterinario.
+
+    La fecha y versión del DPA se sellan en servidor la primera vez que se marca como aceptado.
+    """
+    import re
+    clean_slug = slug.lower().strip()
+    if not re.fullmatch(SLUG_PATTERN, clean_slug):
+        raise HTTPException(status_code=422, detail="Slug inválido: usa 3-60 caracteres a-z, 0-9 y guiones.")
+
+    ahora = datetime.datetime.utcnow()
+    marca = db.query(ClinicaMarcaDB).filter(ClinicaMarcaDB.slug == clean_slug).first()
+    if not marca:
+        marca = ClinicaMarcaDB(slug=clean_slug, created_at=ahora)
+        db.add(marca)
+
+    datos = req.model_dump()
+    dpa_aceptado = datos.pop("dpa_aceptado")
+    for campo, valor in datos.items():
+        setattr(marca, campo, valor)
+
+    if dpa_aceptado and not marca.dpa_aceptado:
+        marca.dpa_aceptado = True
+        marca.fecha_dpa = ahora
+        marca.version_dpa = DPA_VERSION
+    elif not dpa_aceptado:
+        marca.dpa_aceptado = False
+    marca.updated_at = ahora
+
+    db.commit()
+    db.refresh(marca)
+    logger.info(f"[White-Label] Marca '{clean_slug}' guardada (DPA: {marca.dpa_aceptado}).")
+    return {
+        **_branding_public(marca),
+        "plan": marca.plan,
+        "fecha_dpa": marca.fecha_dpa.isoformat() if marca.fecha_dpa else None,
+        "version_dpa": marca.version_dpa,
+        "link_cliente": f"/?vet={clean_slug}",
+    }

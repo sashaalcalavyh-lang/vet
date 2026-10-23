@@ -179,16 +179,33 @@
             <!-- Se inyecta dinámicamente según urgency_level (HIGH vs MEDIUM/LOW) -->
           </div>
 
-          <!-- D) Consentimiento Expreso Ley 21.719 Chile (Protección de Datos Personales) -->
+          <!-- D) Consentimiento Expreso Desempaquetado — Ley 21.719 Chile -->
           <div class="privacy-consent-box">
+            <div class="privacy-consent-title">⚖️ Consentimiento y Derechos del Titular (Ley 21.719)</div>
+
             <label class="privacy-checkbox-label" for="client-consent-ley21719">
-              <input type="checkbox" id="client-consent-ley21719" required class="privacy-checkbox">
+              <input type="checkbox" id="client-consent-ley21719" required checked class="privacy-checkbox">
               <span class="privacy-consent-text">
-                Acepto el tratamiento de mis datos de contacto para gestión clínica, envío de recetas/alertas por WhatsApp y procesamiento asistido por IA conforme a la <strong>Ley 21.719</strong>.
+                <strong>(Obligatorio)</strong> Acepto el tratamiento de mis datos de contacto para la gestión médica, reserva y atención clínica veterinaria de mi mascota (Base legal: relación contractual).
               </span>
             </label>
+
+            <label class="privacy-checkbox-label" for="client-consent-whatsapp">
+              <input type="checkbox" id="client-consent-whatsapp" checked class="privacy-checkbox">
+              <span class="privacy-consent-text">
+                <strong>(Opcional)</strong> Autorizo el envío de recetas médicas oficiales, recordatorios de dosis y confirmaciones de cita directamente a mi <strong>WhatsApp</strong>.
+              </span>
+            </label>
+
+            <label class="privacy-checkbox-label" for="client-consent-ia">
+              <input type="checkbox" id="client-consent-ia" checked class="privacy-checkbox">
+              <span class="privacy-consent-text">
+                <strong>(Opcional)</strong> Autorizo el triaje preliminar asistido por Inteligencia Artificial y la transferencia internacional segura de datos a servidores en EE.UU. (Groq Inc. / Anthropic PBC) conforme al <strong>Art. 26 de la Ley 21.719</strong>.
+              </span>
+            </label>
+
             <button type="button" class="btn-privacy-modal-toggle" id="btn-open-privacy-modal">
-              📋 Ver Política de Privacidad y Uso de IA
+              📋 Ver Política de Privacidad, Transferencia Internacional y DPA
             </button>
           </div>
 
@@ -334,6 +351,9 @@
           </div>
 
           <div class="header-status">
+            <button type="button" class="btn-sun-mode-toggle" id="btn-toggle-sun-mode" title="Modo Terreno Alto Contraste (Sol Directo)">
+              <span id="sun-mode-icon">☀️</span> <span id="sun-mode-label">Sol Directo</span>
+            </button>
             <div class="status-pill" id="backend-status-pill" title="Servidor VPS Hetzner">
               <span class="status-dot pulsing"></span>
               <span id="backend-status-text">Conectando Backend...</span>
@@ -343,6 +363,18 @@
               <span id="db-status-text">PostgreSQL 16</span>
             </div>
           </div>
+        </div>
+
+        <!-- Banner de Búfer Offline de Audios (IndexedDB) -->
+        <div class="offline-audio-banner hidden" id="offline-audio-banner">
+          <div class="offline-banner-icon">📡</div>
+          <div class="offline-banner-content">
+            <strong>Búfer Local de Audios:</strong>
+            <span id="offline-audio-count">1 dictado guardado en memoria local sin conexión</span>
+          </div>
+          <button type="button" class="btn-retry-offline-audio" id="btn-retry-offline-audio">
+            🔄 Reintentar Subida
+          </button>
         </div>
 
         <!-- Navigation Tabs (Mobile-Ergonomic) -->
@@ -862,30 +894,36 @@
       </div>
     </section>
 
-    <!-- MODAL POLÍTICA DE PRIVACIDAD Y USO DE IA (LEY 21.719 CHILE) -->
+    <!-- MODAL POLÍTICA DE PRIVACIDAD, TRANSFERENCIA INTERNACIONAL Y DPA (LEY 21.719 CHILE) -->
     <div class="modal-backdrop hidden" id="modal-privacy-policy">
       <div class="glass-panel modal-privacy-card">
         <div class="modal-privacy-header">
           <div class="privacy-icon-pill">⚖️ LEY 21.719 CHILE</div>
-          <h3>Política de Privacidad, Uso Ético de IA y Derechos ARSOP+</h3>
+          <h3>Política de Privacidad, Tratamiento de Datos y Uso de IA</h3>
           <button type="button" class="btn-close-modal" id="btn-close-privacy-modal" title="Cerrar modal">&times;</button>
         </div>
         <div class="modal-privacy-body">
-          <div class="privacy-item">
-            <strong>(a) Finalidad Exclusivamente Médico-Veterinaria:</strong>
-            <p>Tus datos de contacto (WhatsApp, nombre) y los de tu mascota son recolectados con el único fin de gestionar la atención médica veterinaria, coordinar visitas a domicilio o telemedicina y remitir recetas, indicaciones clínicas o alertas de seguimiento.</p>
+          <div class="privacy-item" id="privacy-item-controller">
+            <strong>(a) Identificación del Responsable y Encargado del Tratamiento (Art. 14):</strong>
+            <p id="privacy-controller-text">El profesional o clínica veterinaria tratante actúa como <strong>Responsable del Tratamiento</strong> (Data Controller). CoVet Chile opera exclusivamente como <strong>Encargado del Tratamiento</strong> (Data Processor) bajo estrictas medidas de seguridad técnica y organizativa mediante un Acuerdo de Tratamiento de Datos (DPA).</p>
           </div>
           <div class="privacy-item">
-            <strong>(b) Efimeridad de Grabaciones de Voz:</strong>
-            <p>Cualquier nota de voz grabada durante el triaje o dictado clínico se procesa exclusivamente en memoria volátil (/tmp/covet_audios/) y es eliminada de manera inmediata y definitiva apenas concluye la transcripción (Zero Audio Retention).</p>
+            <strong>(b) Finalidades Diferenciadas y Base de Licitud (Art. 12 y 13):</strong>
+            <p>1. <em>Gestión Clínica (Obligatoria):</em> Reserva, coordinación de visitas y elaboración de ficha clínica (Base: ejecución de contrato de servicios veterinarios).<br>
+            2. <em>Comunicaciones WhatsApp (Opcional):</em> Despacho de recetas electrónicas y avisos de posología.<br>
+            3. <em>Triaje con IA (Opcional):</em> Clasificación preliminar de urgencias mediante modelos de lenguaje.</p>
           </div>
           <div class="privacy-item">
-            <strong>(c) Procesamiento Seguro y Cifrado de IA:</strong>
-            <p>El procesamiento de triaje y estructuración SOAP se realiza a través de APIs empresariales seguras con cifrado TLS 1.3 (Groq Whisper Large Turbo y Anthropic Claude 3.5 Sonnet) bajo acuerdos estrictos de confidencialidad y no-entrenamiento con datos de pacientes.</p>
+            <strong>(c) Transferencia Internacional de Datos a EE.UU. (Art. 26 Ley 21.719):</strong>
+            <p>Para la transcripción fonética y estructuración del SOAP clínico, se utilizan servicios de alta seguridad provistos por <strong>Groq Inc.</strong> y <strong>Anthropic PBC</strong> ubicados en Estados Unidos de América. Los datos viajan cifrados bajo protocolo TLS 1.3 con acuerdos de confidencialidad que prohíben taxativamente el entrenamiento de modelos fundacionales con datos de pacientes o tutores.</p>
           </div>
           <div class="privacy-item">
-            <strong>(d) Ejercicio de Derechos ARSOP+:</strong>
-            <p>Conforme a la Ley N° 21.719, tienes derecho a Acceso, Rectificación, Supresión, Oposición y Portabilidad. Puedes solicitar la exportación completa de tus datos en JSON o revocar tu consentimiento en cualquier momento mediante nuestra API (<code>/api/v1/covet/privacy/export</code> y <code>/opt-out</code>) o solicitándolo al equipo médico.</p>
+            <strong>(d) Minimización y Memoria Volátil de Audios:</strong>
+            <p>Las grabaciones de voz se procesan íntegramente en la memoria volátil (RAM) del servidor durante la consulta y no se conservan en almacenamiento físico persistente una vez obtenida la transcripción (Zero Persistent Audio Retention).</p>
+          </div>
+          <div class="privacy-item">
+            <strong>(e) Ejercicio de Derechos ARSOP+ y Ticket HMAC Legal:</strong>
+            <p>Conforme a la Ley N° 21.719, tienes derecho a Acceso, Rectificación, Supresión, Oposición y Portabilidad. Si solicitas la supresión de tus datos, se genera un código de comprobante inmutable (<code>BAJA-XXXXXXXX</code>) con sellado HMAC-SHA256 en una tabla aislada de auditoría, anonimizando de forma disociada tu nombre y teléfono para proteger la historia epidemiológica de la mascota.</p>
           </div>
         </div>
         <div class="modal-privacy-footer">

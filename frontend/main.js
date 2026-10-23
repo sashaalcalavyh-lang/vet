@@ -29,6 +29,134 @@ let currentMimeType = '';
 let isClientMicActive = false;
 let clientSpeechRec = null;
 
+// Marca Blanca (White-Label)
+let activeVetSlug = null;
+let activeBranding = null;
+
+// Almacenamiento Local Offline para Audios en Terreno (IndexedDB)
+const DB_NAME = 'covet_local_db';
+const DB_VERSION = 1;
+const STORE_NAME = 'offline_audios';
+
+function openAudioDB() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      resolve(null);
+      return;
+    }
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
+      }
+    };
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function saveOfflineAudio(audioBlob, citaId) {
+  try {
+    const db = await openAudioDB();
+    if (!db) return null;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      const record = {
+        blob: audioBlob,
+        citaId: citaId || null,
+        filename: `dictado_${Date.now()}.webm`,
+        createdAt: new Date().toISOString()
+      };
+      const addReq = store.add(record);
+      addReq.onsuccess = () => {
+        updateOfflineBanner();
+        resolve(addReq.result);
+      };
+      addReq.onerror = () => reject(addReq.error);
+    });
+  } catch (err) {
+    console.warn('[IndexedDB] No se pudo guardar audio offline:', err);
+    return null;
+  }
+}
+
+async function getOfflineAudios() {
+  try {
+    const db = await openAudioDB();
+    if (!db) return [];
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (_) {
+    return [];
+  }
+}
+
+async function removeOfflineAudio(id) {
+  try {
+    const db = await openAudioDB();
+    if (!db) return;
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(id);
+      tx.oncomplete = () => {
+        updateOfflineBanner();
+        resolve();
+      };
+    });
+  } catch (_) {}
+}
+
+async function updateOfflineBanner() {
+  const banner = document.getElementById('offline-audio-banner');
+  const countLabel = document.getElementById('offline-audio-count');
+  if (!banner || !countLabel) return;
+  const list = await getOfflineAudios();
+  if (list.length > 0) {
+    banner.classList.remove('hidden');
+    countLabel.textContent = `${list.length} dictado(s) guardado(s) en memoria local sin conexión`;
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+async function retryUploadOfflineAudios() {
+  const list = await getOfflineAudios();
+  if (list.length === 0) {
+    showToast('No hay audios pendientes de subida.', 'info');
+    return;
+  }
+  showToast(`Reintentando subir ${list.length} dictado(s) guardado(s)...`, 'info');
+  for (const item of list) {
+    try {
+      const formData = new FormData();
+      formData.append('file', item.blob, item.filename);
+      if (item.citaId) formData.append('cita_id', item.citaId);
+
+      const resp = await fetch(`${API_BASE}/api/v1/covet/transcribe`, {
+        method: 'POST',
+        body: formData
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        await removeOfflineAudio(item.id);
+        showToast('Dictado offline subido y procesándose en segundo plano.', 'success');
+        startPolling(data.task_id);
+      }
+    } catch (err) {
+      console.warn('[IndexedDB] Reintento fallido para audio:', item.id, err);
+      showToast('Aún sin conexión al servidor Hetzner. El audio sigue seguro en tu dispositivo.', 'warning');
+      break;
+    }
+  }
+}
+
 // ========================================================
 // 2. SISTEMA DE TEMAS & ARQUITECTURA DE 3 ACCESOS
 // ========================================================
@@ -628,11 +756,14 @@ triageExecutionForm.addEventListener('submit', async (e) => {
     return;
   }
 
-  // Validación de Consentimiento Obligatorio Ley 21.719
-  const consentChk = document.getElementById('client-consent-ley21719');
-  if (!consentChk || !consentChk.checked) {
-    showToast('Debes aceptar el consentimiento conforme a la Ley 21.719 para continuar.', 'error');
-    if (consentChk) consentChk.focus();
+  // Validación de Consentimientos Desempaquetados — Ley 21.719
+  const consentLey = document.getElementById('client-consent-ley21719');
+  const consentWhatsapp = document.getElementById('client-consent-whatsapp');
+  const consentIa = document.getElementById('client-consent-ia');
+
+  if (!consentLey || !consentLey.checked) {
+    showToast('Debes aceptar el consentimiento de atención clínica (Ley 21.719) para continuar.', 'error');
+    if (consentLey) consentLey.focus();
     return;
   }
 
@@ -661,7 +792,10 @@ triageExecutionForm.addEventListener('submit', async (e) => {
     urgency_level: (activeTriageData && activeTriageData.urgency_level) || 'LOW',
     motivo_resumido: (activeTriageData && activeTriageData.motivo_resumido) || 'Consulta clínica',
     first_aid_protocol_id: (activeTriageData && activeTriageData.first_aid_protocol_id) || '',
-    consentimiento_ley21719: true
+    consentimiento_ley21719: true,
+    consentimiento_whatsapp: consentWhatsapp ? consentWhatsapp.checked : false,
+    consentimiento_ia: consentIa ? consentIa.checked : false,
+    clinica_slug: activeVetSlug || null
   };
 
   btnBlockSlot.disabled = true;
@@ -1063,16 +1197,21 @@ function cancelRecording() {
   showToast('Grabación cancelada.', 'info');
 }
 
-// Subida a FastAPI y Polling Asíncrono de Tarea SOAP
+// Subida a FastAPI y Polling Asíncrono de Tarea SOAP con Búfer Offline IndexedDB
 async function uploadAudioAndPoll(audioFile) {
   switchVibeState('processing');
   resetProcessingUI();
 
+  const citaContextVal = selectCitaContexto && selectCitaContexto.value ? selectCitaContexto.value : null;
+
+  // 1. Guardar primero en IndexedDB como salvaguarda ante cortes 4G en terreno
+  const offlineRecordId = await saveOfflineAudio(audioFile, citaContextVal);
+
   try {
     const formData = new FormData();
     formData.append('file', audioFile);
-    if (selectCitaContexto && selectCitaContexto.value) {
-      formData.append('cita_id', selectCitaContexto.value);
+    if (citaContextVal) {
+      formData.append('cita_id', citaContextVal);
     }
 
     setStepActive(stepUpload, 'Subiendo audio al servidor Hetzner...', 25);
@@ -1086,12 +1225,19 @@ async function uploadAudioAndPoll(audioFile) {
     const data = await response.json();
     currentTaskId = data.task_id;
 
+    // Éxito: limpiar del búfer offline
+    if (offlineRecordId) {
+      await removeOfflineAudio(offlineRecordId);
+    }
+
     setStepDone(stepUpload);
     setStepActive(stepWhisper, 'Transcribiendo audio con Groq Whisper Large Turbo...', 50);
 
     startPolling(currentTaskId);
   } catch (err) {
-    showProcessingError(err.message);
+    console.error('Error subiendo audio:', err);
+    showProcessingError(`Error de conexión: ${err.message}. Tu audio está a salvo en el almacenamiento local de tu teléfono.`);
+    updateOfflineBanner();
   }
 }
 
@@ -1675,4 +1821,105 @@ if (btnAdminSwitchClient) {
 if (btnAdminSwitchVet) {
   btnAdminSwitchVet.addEventListener('click', () => switchMainMode('vet'));
 }
+
+// ========================================================
+// 12. INICIALIZACIÓN: WHITE-LABEL, SOL DIRECTO Y BUFFER LOCAL
+// ========================================================
+
+// Botón de Modo Sol Directo (Alto Contraste)
+const btnSunModeToggle = document.getElementById('btn-toggle-sun-mode');
+let isSunModeActive = localStorage.getItem('covet_sun_mode') === 'true';
+
+function setSunMode(active) {
+  isSunModeActive = active;
+  localStorage.setItem('covet_sun_mode', active ? 'true' : 'false');
+  if (btnSunModeToggle) {
+    btnSunModeToggle.classList.toggle('active', active);
+    const label = document.getElementById('sun-mode-label');
+    if (label) label.textContent = active ? 'Sol Activado' : 'Sol Directo';
+  }
+  if (active) {
+    document.body.setAttribute('data-theme', 'sun-contrast');
+    document.body.classList.add('theme-sun-contrast');
+  } else {
+    const defaultTheme = localStorage.getItem('covet-vet-theme') || 'clinical-light';
+    document.body.setAttribute('data-theme', defaultTheme);
+    document.body.classList.remove('theme-sun-contrast');
+  }
+}
+
+if (btnSunModeToggle) {
+  btnSunModeToggle.addEventListener('click', () => {
+    setSunMode(!isSunModeActive);
+    showToast(isSunModeActive ? '☀️ Modo Sol Directo (Alto Contraste) activado' : 'Modo clínico estándar restaurado', 'info');
+  });
+}
+
+// Botón de reintento de audios offline
+const btnRetryOffline = document.getElementById('btn-retry-offline-audio');
+if (btnRetryOffline) {
+  btnRetryOffline.addEventListener('click', retryUploadOfflineAudios);
+}
+
+// Escuchador de conectividad de red
+window.addEventListener('online', () => {
+  updateOfflineBanner();
+  showToast('📡 Conexión a internet restablecida.', 'success');
+});
+
+// Inicialización de Marca Blanca desde la URL (?vet=nombre-marca)
+async function initWhiteLabelBranding() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const slug = urlParams.get('vet') || urlParams.get('clinic');
+  if (!slug) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/branding/${encodeURIComponent(slug.toLowerCase().trim())}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    activeVetSlug = data.slug;
+    activeBranding = data;
+
+    // Aplicar colores corporativos personalizados
+    if (data.color_primario) {
+      document.documentElement.style.setProperty('--teal-primary', data.color_primario);
+      document.documentElement.style.setProperty('--teal-glow', `${data.color_primario}40`);
+    }
+    if (data.color_secundario) {
+      document.documentElement.style.setProperty('--teal-hover', data.color_secundario);
+    }
+
+    // Actualizar Encabezado con Nombre del Veterinario / Clínica
+    const clientHeroTitle = document.querySelector('.client-intent-hero h2');
+    if (clientHeroTitle && data.nombre_fantasia) {
+      clientHeroTitle.innerHTML = `Atención Veterinaria con <span class="white-label-badge">${escapeHtml(data.nombre_fantasia)}</span>`;
+    }
+
+    const clientHeroSubtitle = document.querySelector('.client-intent-hero p');
+    if (clientHeroSubtitle && data.mensaje_bienvenida) {
+      clientHeroSubtitle.textContent = data.mensaje_bienvenida;
+    }
+
+    // Actualizar Responsable del Tratamiento en el Modal de Privacidad Ley 21.719
+    const controllerText = document.getElementById('privacy-controller-text');
+    if (controllerText) {
+      const respName = data.razon_social || data.nombre_fantasia;
+      const respRut = data.rut_responsable ? ` (RUT: ${data.rut_responsable})` : '';
+      const respEmail = data.email_privacidad ? ` | Correo ARSOP+: ${data.email_privacidad}` : '';
+      controllerText.innerHTML = `El <strong>Responsable del Tratamiento</strong> (Data Controller) es <strong>${escapeHtml(respName)}</strong>${escapeHtml(respRut)}${escapeHtml(respEmail)}. CoVet Chile SpA opera como <strong>Encargado del Tratamiento</strong> (Data Processor) bajo el Acuerdo de Tratamiento de Datos (DPA) legalmente vigente.`;
+    }
+
+    console.log(`[White-Label] Marca cargada: ${data.nombre_fantasia} (${data.slug})`);
+  } catch (err) {
+    console.warn('[White-Label] Error cargando branding:', err);
+  }
+}
+
+// Ejecución al cargar
+initWhiteLabelBranding();
+updateOfflineBanner();
+if (isSunModeActive) {
+  setSunMode(true);
+}
+
 

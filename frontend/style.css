@@ -101,6 +101,74 @@ body.theme-dark {
   color: var(--text-main);
 }
 
+/* ======================================================== */
+/* TEMA 3: MODO SOL DIRECTO (ALTO CONTRASTE EXTERIOR 30°C)   */
+/* ======================================================== */
+[data-theme="sun-contrast"],
+body.theme-sun-contrast {
+  --bg-canvas: #FFFFFF;
+  --bg-gradient: none;
+  --bg-card: #FFFFFF;
+  --bg-card-hover: #F8FAFC;
+  --bg-card-active: #F1F5F9;
+
+  --border-subtle: #000000;
+  --border-glass: #000000;
+  --border-highlight: #000000;
+
+  --teal-primary: #047857;
+  --teal-hover: #065F46;
+  --teal-glow: none;
+
+  --vital-rose: #B91C1C;
+  --vital-rose-hover: #991B1B;
+  --vital-rose-glow: none;
+
+  --bio-indigo: #3730A3;
+  --bio-indigo-hover: #312E81;
+  --bio-indigo-glow: none;
+
+  --safe-emerald: #047857;
+  --safe-emerald-hover: #065F46;
+  --safe-emerald-glow: none;
+
+  --amber-warning: #B45309;
+  --amber-glow: none;
+
+  --text-main: #000000;
+  --text-muted: #111827;
+  --text-dim: #1F2937;
+
+  --shadow-glass: 0 4px 0 #000000;
+  --shadow-lg: 0 6px 0 #000000;
+  --input-bg: #FFFFFF;
+
+  background-color: #FFFFFF !important;
+  background-image: none !important;
+  color: #000000 !important;
+}
+
+[data-theme="sun-contrast"] .glass-panel,
+[data-theme="sun-contrast"] .card,
+[data-theme="sun-contrast"] .clinical-input,
+[data-theme="sun-contrast"] .tab-btn {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: #FFFFFF !important;
+  border: 2px solid #000000 !important;
+  color: #000000 !important;
+}
+
+[data-theme="sun-contrast"] p,
+[data-theme="sun-contrast"] span,
+[data-theme="sun-contrast"] label,
+[data-theme="sun-contrast"] strong,
+[data-theme="sun-contrast"] .brand-title,
+[data-theme="sun-contrast"] .brand-subtitle {
+  color: #000000 !important;
+  font-weight: 600 !important;
+}
+
 html, body {
   box-sizing: border-box;
   margin: 0;
@@ -2815,5 +2883,135 @@ body[data-active-view="client"] .theme-toggle-btn {
     width: 100%;
     text-align: center;
   }
+}
+
+/* ======================================================== */
+/* COMPONENTES: SOL DIRECTO, BUFFER AUDIO & LEY 21.719      */
+/* ======================================================== */
+.btn-sun-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.38rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border-glass);
+  background: var(--bg-card);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.btn-sun-mode-toggle:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--teal-primary);
+  transform: translateY(-1px);
+}
+
+.btn-sun-mode-toggle.active {
+  background: #FEF08A;
+  color: #854D0E;
+  border-color: #EAB308;
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.4);
+}
+
+/* Banner de Audios Offline en Memoria Local */
+.offline-audio-banner {
+  margin: 0.75rem 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(245, 158, 11, 0.12));
+  border: 1.5px solid rgba(245, 158, 11, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  animation: pulse-border 2s infinite ease-in-out;
+}
+
+.offline-banner-icon {
+  font-size: 1.4rem;
+}
+
+.offline-banner-content {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  display: flex;
+  flex-direction: column;
+}
+
+.offline-banner-content strong {
+  color: #B45309;
+}
+
+.btn-retry-offline-audio {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm);
+  background: #D97706;
+  color: #FFFFFF;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s ease;
+}
+
+.btn-retry-offline-audio:hover {
+  background: #B45309;
+}
+
+/* Título de Consentimiento Desempaquetado */
+.privacy-consent-title {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--teal-primary);
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+.privacy-consent-box {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  background: rgba(13, 148, 136, 0.04);
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+}
+
+.privacy-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.privacy-checkbox {
+  margin-top: 0.2rem;
+  width: 17px;
+  height: 17px;
+  accent-color: var(--teal-primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+/* Badge de Marca Blanca Dinámica */
+.white-label-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--teal-primary);
+  background: rgba(13, 148, 136, 0.12);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
 }
 
