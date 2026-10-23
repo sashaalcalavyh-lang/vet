@@ -351,6 +351,9 @@
           </div>
 
           <div class="header-status">
+            <button type="button" class="btn-dpa-badge" id="btn-vet-dpa-status" title="Contrato de Encargo de Tratamiento de Datos Ley 21.719">
+              <span class="dpa-icon">🛡️</span> <span id="vet-dpa-label">Escudo Ley 21.719</span>
+            </button>
             <button type="button" class="btn-sun-mode-toggle" id="btn-toggle-sun-mode" title="Modo Terreno Alto Contraste (Sol Directo)">
               <span id="sun-mode-icon">☀️</span> <span id="sun-mode-label">Sol Directo</span>
             </button>
@@ -534,6 +537,9 @@
                   <p>Revisa y edita los datos antes de guardarlos en PostgreSQL y despachar el resumen por WhatsApp.</p>
                 </div>
                 <div class="review-header-actions">
+                  <button type="button" class="btn-tts-listen" id="btn-tts-soap" title="Leer en voz alta diagnóstico y plan terapéutico">
+                    <span class="tts-icon">🔊</span> <span id="tts-label">Escuchar Resumen SOAP</span>
+                  </button>
                   <button class="btn-outline-small" id="btn-discard-review">✕ Descartar</button>
                 </div>
               </div>
@@ -633,12 +639,26 @@
                   <div class="transcript-raw-content" id="review-transcript-raw">Sin transcripción disponible.</div>
                 </details>
 
+                <!-- Checkbox de Consentimiento Presencial en Terreno (Ley 21.719) -->
+                <div class="field-consent-in-person glass-panel">
+                  <label class="consent-checkbox-label" for="review-consent-presencial">
+                    <input type="checkbox" id="review-consent-presencial" checked>
+                    <div class="consent-label-body">
+                      <strong>✓ Consentimiento Clínico Presencial (Ley 21.719):</strong>
+                      <p>Confirmo que el tutor autorizó en consulta el registro clínico digital y envío de su receta por WhatsApp.</p>
+                    </div>
+                  </label>
+                </div>
+
                 <!-- Barra Inferior de Acción -->
                 <div class="review-submit-bar glass-panel">
                   <button type="submit" class="btn-confirm-all" id="btn-confirm-soap">
                     <span class="btn-icon">✓</span>
                     <span class="btn-text">[✓] Confirmar Ficha y Enviar por WhatsApp</span>
                   </button>
+                  <a id="btn-open-receta-pdf" href="#" target="_blank" class="btn-action-receta-pdf hidden">
+                    📄 Descargar / Compartir Receta PDF Oficial
+                  </a>
                 </div>
               </form>
             </div>
@@ -949,6 +969,56 @@
           <button type="button" class="btn-pin-demo-autofill" id="btn-autofill-demo-pin">
             ⚡ Demo Auto-Desbloqueo (PIN: 2026)
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DPA ESCUDO LEGAL LEY 21.719 (CONTRATO DE ENCARGO) -->
+    <div class="modal-backdrop hidden" id="modal-vet-dpa">
+      <div class="glass-panel modal-dpa-card">
+        <div class="modal-privacy-header">
+          <div class="privacy-icon-pill">🛡️ ESCUDO LEY 21.719</div>
+          <h3>Contrato de Encargo de Tratamiento de Datos (DPA)</h3>
+          <button type="button" class="btn-close-modal" id="btn-close-dpa-modal" title="Cerrar modal">&times;</button>
+        </div>
+        <div class="modal-privacy-body">
+          <p style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 1.25rem;">
+            Conforme al Artículo 21 de la Ley N° 21.719, el veterinario es el <strong>Responsable del Tratamiento</strong> y CoVet SpA el <strong>Encargado</strong>. Suscribe este contrato para blindar tu práctica ante multas de la APDP.
+          </p>
+          <form id="form-sign-dpa" class="dpa-sign-form">
+            <div class="input-group" style="margin-bottom: 0.85rem;">
+              <label for="dpa-vet-nombre" style="font-size: 0.85rem; font-weight: 700;">Nombre Completo Profesional *</label>
+              <input type="text" id="dpa-vet-nombre" required placeholder="Ej: Dra. Carolina Rojas Morales" class="glass-input">
+            </div>
+            <div class="input-group" style="margin-bottom: 0.85rem;">
+              <label for="dpa-vet-rut" style="font-size: 0.85rem; font-weight: 700;">RUT Profesional *</label>
+              <input type="text" id="dpa-vet-rut" required placeholder="Ej: 16.789.123-4" class="glass-input font-mono">
+            </div>
+            <div class="input-group" style="margin-bottom: 0.85rem;">
+              <label for="dpa-vet-reg" style="font-size: 0.85rem; font-weight: 700;">Registro Colegio Médico Veterinario / SAG *</label>
+              <input type="text" id="dpa-vet-reg" required placeholder="Ej: Colmevet N° 4521 · SAG 8912" class="glass-input">
+            </div>
+            <div class="input-group" style="margin-bottom: 1.25rem;">
+              <label for="dpa-vet-email" style="font-size: 0.85rem; font-weight: 700;">Email de Contacto Privacidad</label>
+              <input type="email" id="dpa-vet-email" placeholder="contacto@dracarolina.cl" class="glass-input">
+            </div>
+
+            <div style="margin-bottom: 1.25rem; padding: 0.75rem 1rem; background: rgba(13, 148, 136, 0.08); border: 1px solid var(--teal-primary, #0D9488); border-radius: 8px;">
+              <label style="display: flex; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; align-items: flex-start;">
+                <input type="checkbox" id="dpa-check-terms" checked required style="margin-top: 3px; accent-color: var(--teal-primary, #0D9488);">
+                <span>Acepto y suscribo el Contrato de Encargo de Tratamiento de Datos Personales (DPA v1.0) conforme al Art. 21 Ley 21.719 con firma electrónica HMAC-SHA256.</span>
+              </label>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <button type="submit" class="btn-action-primary" id="btn-submit-dpa" style="flex: 1;">
+                🛡️ Firmar y Sellar Contrato DPA
+              </button>
+              <a href="#" target="_blank" class="btn-action-outline hidden" id="btn-download-dpa-cert" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.75rem 1.25rem;">
+                📄 Descargar Certificado
+              </a>
+            </div>
+          </form>
         </div>
       </div>
     </div>

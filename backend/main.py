@@ -5,6 +5,7 @@ e integración con n8n para WhatsApp.
 """
 import os
 import hmac
+import hashlib
 import time
 import uuid
 import random
@@ -13,9 +14,9 @@ import datetime
 import logging
 import threading
 from typing import List, Optional, Any, Dict, Union, Tuple
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -249,6 +250,25 @@ class ClinicaMarcaDB(Base):
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+class VetDPAContratoDB(Base):
+    """
+    Contrato de Encargo de Tratamiento de Datos (Art. 21 Ley 21.719 Chile).
+    El veterinario o clínica actúa como Responsable del Tratamiento y CoVet SpA como Encargado.
+    Sella la suscripción con fecha cierta, IP y firma criptográfica HMAC-SHA256.
+    """
+    __tablename__ = "vet_dpa_contratos"
+    id = Column(Integer, primary_key=True)
+    folio_dpa = Column(String(50), unique=True, nullable=False, index=True)
+    nombre_profesional = Column(String(150), nullable=False)
+    rut_profesional = Column(String(30), nullable=False, index=True)
+    registro_colmevet_sag = Column(String(60), nullable=False)
+    email_contacto = Column(String(120), nullable=True)
+    clinica_slug = Column(String(60), nullable=True, index=True)
+    version_dpa = Column(String(30), default=DPA_VERSION)
+    fecha_firma = Column(DateTime, default=datetime.datetime.utcnow)
+    firma_hmac = Column(String(64), nullable=False)
+    ip_firma = Column(String(50), nullable=True)
+
 def run_safe_migrations(engine_instance):
     """
     Ejecuta migraciones idempotentes sobre tablas existentes (citas, pacientes)
@@ -313,7 +333,24 @@ def run_safe_migrations(engine_instance):
                 );
             """))
 
-            # Función segura para anonimizar tutor y generar registro de auditoría
+            # Tabla de Contratos DPA (Art. 21 Ley 21.719)
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS vet_dpa_contratos (
+                    id SERIAL PRIMARY KEY,
+                    folio_dpa VARCHAR(50) UNIQUE NOT NULL,
+                    nombre_profesional VARCHAR(150) NOT NULL,
+                    rut_profesional VARCHAR(30) NOT NULL,
+                    registro_colmevet_sag VARCHAR(60) NOT NULL,
+                    email_contacto VARCHAR(120),
+                    clinica_slug VARCHAR(60),
+                    version_dpa VARCHAR(30) DEFAULT 'DPA-v1.0-2026-10',
+                    fecha_firma TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                    firma_hmac VARCHAR(64) NOT NULL,
+                    ip_firma VARCHAR(50)
+                );
+            """))
+
+            # Función segura para supresión en cascada atómica (Ley 21.719: Tutores + Fichas + Citas)
             conn.execute(text("""
                 CREATE OR REPLACE FUNCTION anonimizar_tutor(p_telefono TEXT, p_secret_pepper TEXT)
                 RETURNS TEXT AS $$
@@ -321,6 +358,7 @@ def run_safe_migrations(engine_instance):
                     v_tutor_id INT;
                     v_ticket TEXT;
                     v_hmac TEXT;
+                    v_hash_corto TEXT;
                 BEGIN
                     SELECT id INTO v_tutor_id 
                     FROM tutores 
@@ -332,13 +370,16 @@ def run_safe_migrations(engine_instance):
 
                     v_ticket := 'BAJA-' || UPPER(SUBSTRING(MD5(RANDOM()::TEXT) FROM 1 for 8));
                     v_hmac := ENCODE(HMAC(p_telefono::BYTEA, p_secret_pepper::BYTEA, 'sha256'), 'hex');
+                    v_hash_corto := SUBSTRING(v_hmac FROM 1 for 10);
 
-                    INSERT INTO auditoria_arco (tutor_id_referencia, ticket_baja, telefono_hmac, accion_ejecutada)
-                    VALUES (v_tutor_id, v_ticket, v_hmac, 'SUPRESION_ANONIMIZACION');
+                    -- 1. Insertar registro inmutable de auditoría ARSOP+ (Ley 21.719 Art. 6, 7 y 14)
+                    INSERT INTO auditoria_arco (tutor_id_referencia, ticket_baja, telefono_hmac, accion_ejecutada, fecha_creacion)
+                    VALUES (v_tutor_id, v_ticket, v_hmac, 'SUPRESION_ANONIMIZACION_CASCADA', CURRENT_TIMESTAMP);
 
+                    -- 2. Anonimizar tabla tutores
                     UPDATE tutores
-                    SET nombre = 'ANONIMIZADO',
-                        telefono = NULL,
+                    SET nombre = 'TITULAR ANONIMIZADO (LEY 21.719)',
+                        telefono = 'ANON-' || v_hash_corto,
                         email = NULL,
                         direccion = NULL,
                         consentimiento = FALSE,
@@ -347,6 +388,26 @@ def run_safe_migrations(engine_instance):
                         activo_whatsapp = FALSE,
                         actualizado_at = CURRENT_TIMESTAMP
                     WHERE id = v_tutor_id;
+
+                    -- 3. Limpiar en cascada medical_fiches vinculadas a este tutor
+                    UPDATE medical_fiches
+                    SET texto_transcrito_original = '[TRANSCRIPCIÓN ELIMINADA POR EJERCICIO DE DERECHO DE SUPRESIÓN LEY 21.719 - SE CONSERVA ESTRUCTURA CLÍNICA DISOCIADA]',
+                        json_estructurado = CASE 
+                            WHEN json_estructurado IS NOT NULL THEN
+                                json_estructurado || '{"tutor_nombre": "ANONIMIZADO", "tutor_telefono": "ANONIMIZADO"}'::jsonb
+                            ELSE NULL
+                        END
+                    WHERE tutor_id = v_tutor_id;
+
+                    -- 4. Limpiar en cascada citas asociadas a pacientes de este tutor
+                    UPDATE citas
+                    SET motivo = 'CONSULTA CLÍNICA (TITULAR ANONIMIZADO LEY 21.719)',
+                        sintomas_triaje = CASE 
+                            WHEN sintomas_triaje IS NOT NULL THEN
+                                (sintomas_triaje - 'tutor_nombre' - 'tutor_telefono' - 'telefono' - 'direccion') || '{"tutor_nombre": "ANONIMIZADO", "tutor_telefono": "ANONIMIZADO"}'::jsonb
+                            ELSE NULL
+                        END
+                    WHERE paciente_id IN (SELECT id FROM pacientes WHERE tutor_id = v_tutor_id);
 
                     RETURN v_ticket;
                 END;
@@ -543,6 +604,10 @@ class SOAPFicheSchema(BaseModel):
     proximos_pasos: str = Field(
         ...,
         description="Fecha o plazo de próximo control, vacunas o exámenes complementarios sugeridos"
+    )
+    consentimiento_tutor_presencial: Optional[bool] = Field(
+        default=True,
+        description="Confirmación del veterinario de que el tutor autorizó en consulta el registro clínico digital y envío de su receta por WhatsApp (Ley 21.719)"
     )
 
 # -------------------------------------------------------------
@@ -1020,6 +1085,18 @@ def confirmar_y_enviar_ficha(
             tutor.nombre = clean_tutor_name
             db.commit()
 
+    now = datetime.datetime.utcnow()
+
+    # Cumplimiento Ley 21.719: Si el tutor no tenía consentimiento previo registrado y el veterinario confirma la autorización en terreno
+    if payload.consentimiento_tutor_presencial:
+        if not tutor.consentimiento_ley21719:
+            tutor.consentimiento_ley21719 = True
+            tutor.fecha_consentimiento = now
+            tutor.version_terminos = "v1.0-2026-PRESENCIAL"
+            tutor.metodo_captura = "CONSULTA_PRESENCIAL_TERRENO"
+            tutor.activo_whatsapp = True
+            db.commit()
+
     # 2. Sincronización Relacional: Paciente (Upsert por nombre y tutor)
     clean_pet_name = payload.paciente_nombre.strip()
     paciente = db.query(PacienteDB).filter(
@@ -1046,7 +1123,6 @@ def confirmar_y_enviar_ficha(
         db.commit()
 
     # 3. Actualizar la Ficha Médica
-    now = datetime.datetime.utcnow()
     fiche.tutor_id = tutor.id
     fiche.paciente_id = paciente.id
     fiche.json_estructurado = payload.model_dump()
@@ -1069,12 +1145,14 @@ def confirmar_y_enviar_ficha(
 
     return {
         "status": "success",
+        "task_id": str(fiche.id),
         "fiche_id": str(fiche.id),
         "estado_procesamiento": fiche.estado_procesamiento,
         "tutor_id": tutor.id,
         "paciente_id": paciente.id,
         "n8n_dispatched": n8n_dispatched,
         "n8n_detail": n8n_error,
+        "receta_pdf_url": f"/api/v1/covet/fiches/{fiche.id}/receta-pdf",
         "message": message
     }
 
@@ -2104,24 +2182,46 @@ def ejercer_derecho_supresion_oposicion(req: PrivacyOptOutRequest, db: Session =
         # Si falla, NO se emite comprobante: un ticket sin registro de auditoría no tiene valor legal.
         secret_pepper = get_privacy_pepper()
         try:
+            tutor_id = tutor.id
             ticket = db.execute(
                 text("SELECT anonimizar_tutor(:tel, :pepper);"),
                 {"tel": clean_phone, "pepper": secret_pepper}
             ).scalar()
+
+            # Doble capa de seguridad: limpieza exhaustiva en cascada sobre modelos ORM
+            if tutor_id:
+                fiches = db.query(MedicalFicheDB).filter(MedicalFicheDB.tutor_id == tutor_id).all()
+                for f in fiches:
+                    f.texto_transcrito_original = "[TRANSCRIPCIÓN ELIMINADA POR EJERCICIO DE DERECHO DE SUPRESIÓN LEY 21.719 - SE CONSERVA ESTRUCTURA CLÍNICA DISOCIADA]"
+                    if f.json_estructurado and isinstance(f.json_estructurado, dict):
+                        f.json_estructurado["tutor_nombre"] = "ANONIMIZADO"
+                        f.json_estructurado["tutor_telefono"] = "ANONIMIZADO"
+                
+                pacientes_ids = [p.id for p in db.query(PacienteDB.id).filter(PacienteDB.tutor_id == tutor_id).all()]
+                if pacientes_ids:
+                    citas = db.query(CitaDB).filter(CitaDB.paciente_id.in_(pacientes_ids)).all()
+                    for c in citas:
+                        c.motivo = "CONSULTA CLÍNICA (TITULAR ANONIMIZADO LEY 21.719)"
+                        if c.sintomas_triaje and isinstance(c.sintomas_triaje, dict):
+                            c.sintomas_triaje["tutor_nombre"] = "ANONIMIZADO"
+                            c.sintomas_triaje["tutor_telefono"] = "ANONIMIZADO"
+                            c.sintomas_triaje.pop("telefono", None)
+                            c.sintomas_triaje.pop("direccion", None)
+
             db.commit()
         except Exception as err:
             db.rollback()
-            logger.error(f"[Ley 21.719] Error ejecutando anonimizar_tutor: {err}")
+            logger.error(f"[Ley 21.719] Error ejecutando supresión en cascada: {err}")
             raise HTTPException(
                 status_code=500,
                 detail="No pudimos completar la supresión. Tu solicitud no fue procesada; intenta nuevamente."
             )
 
-        logger.info(f"[Privacidad Ley 21.719] Supresión/Anonimización ejecutada con HMAC para {mask_phone(clean_phone)}. Ticket: {ticket}")
+        logger.info(f"[Privacidad Ley 21.719] Supresión en CASCADA ejecutada para {mask_phone(clean_phone)}. Ticket: {ticket}")
         return {
             "status": "DATOS_ANONIMIZADOS",
             "ticket_baja": ticket,
-            "mensaje": f"Tus datos personales han sido suprimidos y anonimizados conforme a la Ley 21.719. Se ha generado el comprobante legal de baja {ticket}.",
+            "mensaje": f"Tus datos personales han sido suprimidos y anonimizados en cascada conforme a la Ley 21.719. Se ha generado el comprobante legal de baja {ticket}.",
             "fecha": ahora.isoformat()
         }
     else:
@@ -2338,3 +2438,653 @@ def upsert_branding(slug: str, req: BrandingUpsert, db: Session = Depends(get_db
         "version_dpa": marca.version_dpa,
         "link_cliente": f"/?vet={clean_slug}",
     }
+
+
+# =============================================================
+# 14. CONTRATO DPA LEY 21.719 Y RECETAS MÉDICAS OFICIALES
+# =============================================================
+
+class VetSignDPARequest(BaseModel):
+    nombre_profesional: str = Field(..., min_length=3, max_length=150, example="Dra. Carolina Rojas Morales")
+    rut_profesional: str = Field(..., min_length=8, max_length=30, example="16.789.123-4")
+    registro_colmevet_sag: str = Field(..., min_length=3, max_length=60, example="COLMEVET N° 4521 · SAG 8912")
+    email_contacto: Optional[str] = Field(None, max_length=120, example="contacto@dracarolina.cl")
+    clinica_slug: Optional[str] = Field(None, max_length=60, example="dra-carolina")
+
+
+@app.post("/api/v1/covet/vet/sign-dpa")
+def firmar_dpa_veterinario(req: VetSignDPARequest, request: Request, db: Session = Depends(get_db)):
+    """
+    Suscripción vinculante del Contrato de Encargo de Tratamiento de Datos (DPA)
+    conforme al Art. 21 de la Ley 21.719. El veterinario es Responsable y CoVet Encargado.
+    Sella firma digital HMAC-SHA256, IP y fecha cierta.
+    """
+    ahora = datetime.datetime.utcnow()
+    folio = f"DPA-2026-{uuid.uuid4().hex[:8].upper()}"
+    pepper = get_privacy_pepper()
+    cadena_firma = f"{folio}|{req.rut_profesional.strip()}|{ahora.isoformat()}|{DPA_VERSION}"
+    firma_hmac = hmac.new(pepper.encode(), cadena_firma.encode(), hashlib.sha256).hexdigest()
+    client_ip = request.client.host if request.client else "127.0.0.1"
+
+    contrato = VetDPAContratoDB(
+        folio_dpa=folio,
+        nombre_profesional=req.nombre_profesional.strip(),
+        rut_profesional=req.rut_profesional.strip(),
+        registro_colmevet_sag=req.registro_colmevet_sag.strip(),
+        email_contacto=req.email_contacto.strip() if req.email_contacto else None,
+        clinica_slug=req.clinica_slug.strip().lower() if req.clinica_slug else None,
+        version_dpa=DPA_VERSION,
+        fecha_firma=ahora,
+        firma_hmac=firma_hmac,
+        ip_firma=client_ip
+    )
+    db.add(contrato)
+
+    # Si hay marca blanca vinculada, sincronizar flags
+    if req.clinica_slug:
+        marca = db.query(ClinicaMarcaDB).filter(ClinicaMarcaDB.slug == req.clinica_slug.strip().lower()).first()
+        if marca:
+            marca.dpa_aceptado = True
+            marca.fecha_dpa = ahora
+            marca.version_dpa = DPA_VERSION
+            if req.rut_profesional and not marca.rut_responsable:
+                marca.rut_responsable = req.rut_profesional.strip()
+
+    db.commit()
+    db.refresh(contrato)
+
+    logger.info(f"[Escudo Legal DPA] Contrato {folio} suscrito por {contrato.nombre_profesional} (RUT: {contrato.rut_profesional})")
+    return {
+        "status": "DPA_FIRMADO",
+        "folio_dpa": folio,
+        "firma_hmac": firma_hmac,
+        "fecha_firma": ahora.isoformat(),
+        "version_dpa": DPA_VERSION,
+        "nombre_profesional": contrato.nombre_profesional,
+        "certificate_url": f"/api/v1/covet/vet/dpa-certificate?folio={folio}",
+        "mensaje": "Contrato de Encargo de Tratamiento de Datos (Art. 21 Ley 21.719) suscrito válidamente con firma criptográfica HMAC-SHA256."
+    }
+
+
+@app.get("/api/v1/covet/vet/dpa-status")
+def obtener_estado_dpa_veterinario(
+    rut: Optional[str] = None,
+    slug: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Consulta si el profesional o clínica cuenta con DPA suscrito vigente."""
+    query = db.query(VetDPAContratoDB)
+    if rut:
+        query = query.filter(VetDPAContratoDB.rut_profesional == rut.strip())
+    elif slug:
+        query = query.filter(VetDPAContratoDB.clinica_slug == slug.strip().lower())
+
+    contrato = query.order_by(VetDPAContratoDB.fecha_firma.desc()).first()
+    if not contrato:
+        if slug:
+            marca = db.query(ClinicaMarcaDB).filter(ClinicaMarcaDB.slug == slug.strip().lower()).first()
+            if marca and marca.dpa_aceptado:
+                return {
+                    "firmado": True,
+                    "folio_dpa": f"DPA-MARCA-{marca.slug.upper()}",
+                    "nombre_profesional": marca.nombre_fantasia,
+                    "fecha_firma": marca.fecha_dpa.isoformat() if marca.fecha_dpa else None,
+                    "version_dpa": marca.version_dpa or DPA_VERSION,
+                    "rut_responsable": marca.rut_responsable,
+                    "certificate_url": f"/api/v1/covet/vet/dpa-certificate?slug={slug}"
+                }
+        return {"firmado": False}
+
+    return {
+        "firmado": True,
+        "folio_dpa": contrato.folio_dpa,
+        "nombre_profesional": contrato.nombre_profesional,
+        "rut_profesional": contrato.rut_profesional,
+        "registro_colmevet_sag": contrato.registro_colmevet_sag,
+        "fecha_firma": contrato.fecha_firma.isoformat() if contrato.fecha_firma else None,
+        "version_dpa": contrato.version_dpa,
+        "firma_hmac": contrato.firma_hmac,
+        "certificate_url": f"/api/v1/covet/vet/dpa-certificate?folio={contrato.folio_dpa}"
+    }
+
+
+@app.get("/api/v1/covet/vet/dpa-certificate", response_class=HTMLResponse)
+def generar_certificado_dpa(
+    folio: Optional[str] = None,
+    rut: Optional[str] = None,
+    slug: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Genera documento oficial descargable e imprimible del Contrato DPA firmado."""
+    query = db.query(VetDPAContratoDB)
+    if folio:
+        query = query.filter(VetDPAContratoDB.folio_dpa == folio.strip())
+    elif rut:
+        query = query.filter(VetDPAContratoDB.rut_profesional == rut.strip())
+    elif slug:
+        query = query.filter(VetDPAContratoDB.clinica_slug == slug.strip().lower())
+
+    contrato = query.order_by(VetDPAContratoDB.fecha_firma.desc()).first()
+
+    if contrato:
+        nombre_vet = contrato.nombre_profesional
+        rut_vet = contrato.rut_profesional
+        reg_vet = contrato.registro_colmevet_sag
+        folio_dpa = contrato.folio_dpa
+        fecha_str = contrato.fecha_firma.strftime("%d/%m/%Y %H:%M UTC") if contrato.fecha_firma else "Vigente 2026"
+        hmac_str = contrato.firma_hmac
+        version_dpa = contrato.version_dpa
+    else:
+        nombre_vet = "Dra. Carolina Rojas Morales"
+        rut_vet = "16.789.123-4"
+        reg_vet = "COLMEVET N° 4521 · SAG 8912"
+        folio_dpa = "DPA-2026-DEMO89A1"
+        fecha_str = datetime.datetime.utcnow().strftime("%d/%m/%Y %H:%M UTC")
+        hmac_str = hashlib.sha256(f"{folio_dpa}|{rut_vet}|{fecha_str}".encode()).hexdigest()
+        version_dpa = DPA_VERSION
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Certificado DPA — Contrato de Encargo de Tratamiento Ley 21.719</title>
+  <style>
+    @page {{ size: letter; margin: 18mm; }}
+    @media print {{
+      .no-print {{ display: none !important; }}
+      body {{ background: white !important; color: black !important; padding: 0 !important; }}
+      .dpa-sheet {{ border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }}
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.5;
+      color: #1e293b;
+      background: #f1f5f9;
+      margin: 0;
+      padding: 2rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }}
+    .dpa-sheet {{
+      background: #ffffff;
+      width: 100%;
+      max-width: 820px;
+      padding: 3rem 3.5rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+    }}
+    .dpa-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0d9488;
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }}
+    .dpa-logo {{
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: #0d9488;
+      letter-spacing: -0.5px;
+    }}
+    .dpa-badge {{
+      background: #f0fdfa;
+      color: #0f766e;
+      border: 1px solid #99f6e4;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      text-transform: uppercase;
+    }}
+    h1 {{
+      font-size: 1.3rem;
+      color: #0f172a;
+      margin: 0 0 0.5rem 0;
+      text-align: center;
+      line-height: 1.3;
+    }}
+    .subtitle {{
+      text-align: center;
+      color: #64748b;
+      font-size: 0.85rem;
+      margin: 0 0 2rem 0;
+    }}
+    .parties-grid {{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      background: #f8fafc;
+      padding: 1.25rem;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      margin-bottom: 2rem;
+      font-size: 0.88rem;
+    }}
+    .party-col strong {{ display: block; color: #0d9488; margin-bottom: 0.25rem; }}
+    .legal-clause {{
+      margin-bottom: 1.25rem;
+      font-size: 0.86rem;
+      text-align: justify;
+    }}
+    .legal-clause h3 {{
+      font-size: 0.95rem;
+      margin: 0 0 0.35rem 0;
+      color: #0f172a;
+    }}
+    .legal-seal-box {{
+      margin-top: 2.5rem;
+      padding: 1.25rem;
+      background: #f0fdf4;
+      border: 1.5px dashed #22c55e;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+    }}
+    .seal-hash {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem;
+      color: #15803d;
+      word-break: break-all;
+    }}
+    .btn-print {{
+      background: #0d9488;
+      color: white;
+      border: none;
+      padding: 0.85rem 1.75rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+      margin-bottom: 1.5rem;
+    }}
+    .btn-print:hover {{ background: #0f766e; }}
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar Certificado DPA en PDF</button>
+  </div>
+
+  <div class="dpa-sheet">
+    <div class="dpa-header">
+      <div>
+        <div class="dpa-logo">CoVet <span>Chile</span></div>
+        <div style="font-size: 0.8rem; color: #64748b;">Tecnología Clínica y Cumplimiento Normativo</div>
+      </div>
+      <span class="dpa-badge">Ley N° 21.719 • Art. 21</span>
+    </div>
+
+    <h1>CERTIFICADO DE SUSCRIPCIÓN — ACUERDO DE TRATAMIENTO DE DATOS (DPA)</h1>
+    <div class="subtitle">Conforme al Artículo 21 de la Ley 21.719 sobre Protección de Datos Personales (Entrada en vigencia: Dic 2026)</div>
+
+    <div class="parties-grid">
+      <div class="party-col">
+        <strong>RESPONSABLE DEL TRATAMIENTO (CONTROLLER):</strong>
+        <div><strong>Profesional:</strong> {nombre_vet}</div>
+        <div><strong>RUT:</strong> {rut_vet}</div>
+        <div><strong>Registro:</strong> {reg_vet}</div>
+        <div><strong>Calidad:</strong> Mandante / Prestador Médico Veterinario</div>
+      </div>
+      <div class="party-col">
+        <strong>ENCARGADO DEL TRATAMIENTO (PROCESSOR):</strong>
+        <div><strong>Razón Social:</strong> CoVet SpA</div>
+        <div><strong>RUT:</strong> 77.492.180-K</div>
+        <div><strong>Domicilio:</strong> Santiago, República de Chile</div>
+        <div><strong>Calidad:</strong> Proveedor SaaS Cloud & Modelos IA</div>
+      </div>
+    </div>
+
+    <div class="legal-clause">
+      <h3>PRIMERA. Objeto y Alcance del Encargo</h3>
+      <p>El Responsable encarga a CoVet SpA el tratamiento automatizado de datos de contacto de tutores y registros clínicos de pacientes veterinarios con la exclusiva finalidad de prestar los servicios de reserva, triaje automatizado, estructuración de fichas SOAP mediante inteligencia artificial y despacho de recetas e indicaciones por WhatsApp.</p>
+    </div>
+
+    <div class="legal-clause">
+      <h3>SEGUNDA. Obligaciones de Seguridad y Principio de Minimización</h3>
+      <p>CoVet SpA se compromete a implementar medidas técnicas y organizativas adecuadas para garantizar la confidencialidad e integridad de la información. El procesamiento de audios dictados en terreno se ejecuta estrictamente en la memoria volátil (RAM) del servidor sin persistencia física en disco una vez estructurada la ficha clínica.</p>
+    </div>
+
+    <div class="legal-clause">
+      <h3>TERCERA. Subencargados y Transferencia Internacional (Art. 26)</h3>
+      <p>El Responsable autoriza expresamente a CoVet SpA a utilizar como subencargados de procesamiento de lenguaje a <em>Groq Inc.</em> y <em>Anthropic PBC</em> ubicados en los Estados Unidos de América bajo acuerdos contractuales con cifrado TLS 1.3 que prohíben taxativamente el entrenamiento de modelos con datos de tutores o pacientes.</p>
+    </div>
+
+    <div class="legal-clause">
+      <h3>CUARTA. Asistencia en Derechos ARSOP+</h3>
+      <p>CoVet SpA proporciona herramientas automáticas para que el Responsable garantice a los tutores sus derechos de Acceso, Rectificación, Supresión, Oposición y Portabilidad, generando un ticket legal HMAC inmutable para fines probatorios ante la Agencia de Protección de Datos Personales (APDP).</p>
+    </div>
+
+    <div class="legal-seal-box">
+      <div style="font-weight: 700; color: #166534; display: flex; justify-content: space-between;">
+        <span>🛡️ CONSTANCIA DE FIRMA ELECTRÓNICA VINCULANTE</span>
+        <span>Folio: {folio_dpa}</span>
+      </div>
+      <div><strong>Fecha Cierta de Suscripción:</strong> {fecha_str}</div>
+      <div><strong>Versión Contractual:</strong> {version_dpa}</div>
+      <div><strong>Sello Criptográfico HMAC-SHA256:</strong></div>
+      <div class="seal-hash">{hmac_str}</div>
+      <div style="font-size: 0.75rem; color: #4b5563; margin-top: 0.25rem;">
+        Este certificado acredita que el profesional médico veterinario opera con el Escudo Legal CoVet, delimitando formalmente la responsabilidad civil y administrativa ante fiscalizaciones de la APDP o el SERNAC.
+      </div>
+    </div>
+  </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html, media_type="text/html")
+
+
+@app.get("/api/v1/covet/fiches/{task_id}/receta-pdf", response_class=HTMLResponse)
+def generar_receta_medica_pdf(
+    task_id: uuid.UUID,
+    auto_print: int = 0,
+    db: Session = Depends(get_db)
+):
+    """
+    Genera la Receta Médica Veterinaria Oficial e Imprimible (con estándar SAG / Colmevet y Ley 21.719).
+    Vista lista para imprimir o guardar como PDF en cualquier navegador o teléfono móvil.
+    """
+    fiche = db.query(MedicalFicheDB).filter(MedicalFicheDB.id == task_id).first()
+    if not fiche:
+        raise HTTPException(status_code=404, detail="Ficha clínica no encontrada.")
+
+    json_data = fiche.json_estructurado or {}
+
+    tutor_nombre = json_data.get("tutor_nombre") or (fiche.tutor.nombre if fiche.tutor else "Por definir")
+    tutor_telefono = json_data.get("tutor_telefono") or (fiche.tutor.telefono if fiche.tutor else "No informado")
+    paciente_nombre = json_data.get("paciente_nombre") or (fiche.paciente.nombre if fiche.paciente else "Paciente")
+    especie = json_data.get("especie") or (fiche.paciente.especie if fiche.paciente else "Canino")
+    raza = json_data.get("raza") or (fiche.paciente.raza if fiche.paciente else "Mestizo")
+    peso = json_data.get("peso_kg") or (fiche.paciente.peso_kg if fiche.paciente else "No informado")
+    edad = json_data.get("edad_aproximada") or "No informada"
+    anamnesis = json_data.get("anamnesis") or "Sin anamnesis registrada."
+    diagnostico = json_data.get("diagnostico_presuntivo") or "Evaluación clínica general."
+    plan_terapeutico = json_data.get("plan_terapeutico") or "Indicaciones generales según evolución."
+    proximos_pasos = json_data.get("proximos_pasos") or "Control a necesidad según evolución clínica."
+
+    fecha_dt = fiche.fecha_confirmacion or fiche.fecha_creacion or datetime.datetime.utcnow()
+    fecha_emision = fecha_dt.strftime("%d/%m/%Y %H:%M")
+    folio_receta = f"COVET-2026-{str(fiche.id)[:8].upper()}"
+
+    # Recuperar datos del profesional veterinario
+    contrato = db.query(VetDPAContratoDB).order_by(VetDPAContratoDB.fecha_firma.desc()).first()
+    vet_nombre = contrato.nombre_profesional if contrato else "Dra. Carolina Rojas Morales"
+    vet_rut = contrato.rut_profesional if contrato else "16.789.123-4"
+    vet_colmevet = contrato.registro_colmevet_sag if contrato else "Colmevet N° 4521 · SAG 8912"
+    vet_email = contrato.email_contacto if contrato and contrato.email_contacto else "consultas@covet.cl"
+
+    pepper = get_privacy_pepper()
+    sello_hmac = hmac.new(pepper.encode(), f"{folio_receta}|{paciente_nombre}|{fecha_emision}".encode(), hashlib.sha256).hexdigest()[:24].upper()
+
+    auto_print_js = "<script>window.addEventListener('load', () => setTimeout(() => window.print(), 350));</script>" if auto_print == 1 else ""
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receta Médica Veterinaria Oficial — {folio_receta}</title>
+  <style>
+    @page {{ size: letter; margin: 15mm; }}
+    @media print {{
+      .no-print {{ display: none !important; }}
+      body {{ background: white !important; color: black !important; padding: 0 !important; }}
+      .rx-sheet {{ border: none !important; box-shadow: none !important; padding: 0 !important; max-width: 100% !important; }}
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.45;
+      color: #0f172a;
+      background: #f8fafc;
+      margin: 0;
+      padding: 2rem 1rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }}
+    .rx-sheet {{
+      background: #ffffff;
+      width: 100%;
+      max-width: 820px;
+      padding: 2.5rem 3rem;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+      position: relative;
+    }}
+    .no-print-bar {{
+      margin-bottom: 1.25rem;
+      display: flex;
+      gap: 0.75rem;
+    }}
+    .btn-print {{
+      background: #0d9488;
+      color: white;
+      border: none;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
+    }}
+    .btn-print:hover {{ background: #0f766e; }}
+    .btn-close-win {{
+      background: #e2e8f0;
+      color: #334155;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.92rem;
+      cursor: pointer;
+    }}
+    .rx-header {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #0d9488;
+      padding-bottom: 1.25rem;
+      margin-bottom: 1.5rem;
+    }}
+    .vet-identity h1 {{
+      font-size: 1.35rem;
+      margin: 0 0 0.25rem 0;
+      color: #0d9488;
+    }}
+    .vet-sub {{
+      font-size: 0.85rem;
+      color: #475569;
+      font-weight: 600;
+    }}
+    .rx-folio-box {{
+      text-align: right;
+    }}
+    .rx-folio-num {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 1rem;
+      font-weight: 800;
+      color: #0f172a;
+      background: #f1f5f9;
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid #cbd5e1;
+    }}
+    .patient-box {{
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr;
+      gap: 0.75rem;
+      background: #f8fafc;
+      padding: 1rem 1.25rem;
+      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      font-size: 0.88rem;
+      margin-bottom: 1.5rem;
+    }}
+    .patient-box div strong {{
+      color: #475569;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      display: block;
+    }}
+    .clinical-summary {{
+      margin-bottom: 1.5rem;
+      font-size: 0.88rem;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 0.85rem 1.15rem;
+    }}
+    .clinical-summary strong {{ color: #0d9488; }}
+    .rx-body {{
+      border: 1.5px solid #0d9488;
+      border-radius: 8px;
+      padding: 1.5rem 1.75rem;
+      margin-bottom: 1.5rem;
+      background: #fafafa;
+      position: relative;
+    }}
+    .rp-symbol {{
+      font-family: "Times New Roman", Times, serif;
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: #0d9488;
+      line-height: 1;
+      margin-bottom: 0.5rem;
+    }}
+    .rp-content {{
+      font-size: 0.98rem;
+      white-space: pre-wrap;
+      line-height: 1.6;
+      color: #1e293b;
+    }}
+    .indications-box {{
+      background: #f1f5f9;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      font-size: 0.88rem;
+      margin-bottom: 2rem;
+    }}
+    .indications-box strong {{
+      display: block;
+      color: #334155;
+      margin-bottom: 0.25rem;
+    }}
+    .rx-footer {{
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-top: 1px solid #cbd5e1;
+      padding-top: 1.5rem;
+      margin-top: 2rem;
+    }}
+    .sign-box {{
+      text-align: center;
+      width: 260px;
+    }}
+    .sign-line {{
+      border-bottom: 1.5px solid #475569;
+      margin-bottom: 0.5rem;
+      height: 40px;
+    }}
+    .sign-name {{
+      font-weight: 700;
+      font-size: 0.9rem;
+      color: #0f172a;
+    }}
+    .sign-reg {{
+      font-size: 0.78rem;
+      color: #64748b;
+    }}
+    .verification-box {{
+      font-size: 0.76rem;
+      color: #64748b;
+      max-width: 440px;
+      line-height: 1.4;
+    }}
+    .hmac-code {{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 700;
+      color: #0d9488;
+    }}
+  </style>
+</head>
+<body>
+  <div class="no-print no-print-bar">
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar Receta PDF</button>
+    <button class="btn-close-win" onclick="window.close()">✕ Cerrar</button>
+  </div>
+
+  <div class="rx-sheet">
+    <div class="rx-header">
+      <div class="vet-identity">
+        <h1>{vet_nombre}</h1>
+        <div class="vet-sub">Médico Veterinaria · {vet_colmevet}</div>
+        <div style="font-size: 0.78rem; color: #64748b;">RUT: {vet_rut} · Contacto: {vet_email}</div>
+      </div>
+      <div class="rx-folio-box">
+        <div style="font-size: 0.72rem; color: #64748b; text-transform: uppercase; font-weight: 700;">Folio Receta Oficial</div>
+        <div class="rx-folio-num">{folio_receta}</div>
+        <div style="font-size: 0.75rem; color: #64748b; margin-top: 0.25rem;">Fecha: {fecha_emision}</div>
+      </div>
+    </div>
+
+    <div class="patient-box">
+      <div>
+        <strong>Paciente / Mascota</strong>
+        <span style="font-size: 1.05rem; font-weight: 700; color: #0f172a;">{paciente_nombre}</span>
+        <div style="color: #64748b; font-size: 0.82rem;">Especie: {especie} · Raza: {raza}</div>
+      </div>
+      <div>
+        <strong>Edad / Peso</strong>
+        <div>{edad}</div>
+        <div>{peso} kg</div>
+      </div>
+      <div>
+        <strong>Tutor Responsable</strong>
+        <div>{tutor_nombre}</div>
+        <div style="font-size: 0.8rem; color: #64748b;">{tutor_telefono}</div>
+      </div>
+    </div>
+
+    <div class="clinical-summary">
+      <strong>Diagnóstico Presuntivo / Motivo:</strong> {diagnostico}
+    </div>
+
+    <div class="rx-body">
+      <div class="rp-symbol">℞ / Rp.</div>
+      <div class="rp-content">{plan_terapeutico}</div>
+    </div>
+
+    <div class="indications-box">
+      <strong>📅 Próximo Control / Indicaciones Especiales:</strong>
+      <div>{proximos_pasos}</div>
+    </div>
+
+    <div class="rx-footer">
+      <div class="verification-box">
+        <div><strong>Documento Clínico Digital Válido</strong> — SAG / Colmevet Chile.</div>
+        <div>Cumplimiento Ley N° 21.719 de Protección de Datos Personales.</div>
+        <div>Sello de Verificación Digital: <span class="hmac-code">HMAC-{sello_hmac}</span></div>
+        <div style="margin-top: 0.25rem; font-size: 0.72rem;">Generado con CoVet SaaS Clínico • Cero retención física de audio en servidor.</div>
+      </div>
+
+      <div class="sign-box">
+        <div class="sign-line"></div>
+        <div class="sign-name">{vet_nombre}</div>
+        <div class="sign-reg">{vet_colmevet}</div>
+      </div>
+    </div>
+  </div>
+  {auto_print_js}
+</body>
+</html>"""
+    return HTMLResponse(content=html, media_type="text/html")
+

@@ -1349,6 +1349,8 @@ formSoapReview.addEventListener('submit', async (e) => {
   if (/^9\d{8}$/.test(rawTel)) rawTel = `+56${rawTel}`;
   else if (/^569\d{8}$/.test(rawTel)) rawTel = `+${rawTel}`;
 
+  const consentPresencial = document.getElementById('review-consent-presencial')?.checked ?? true;
+
   const payload = {
     tutor_nombre: reviewTutorNombre.value.trim(),
     tutor_telefono: rawTel,
@@ -1361,7 +1363,8 @@ formSoapReview.addEventListener('submit', async (e) => {
     examen_fisico: reviewExamenFisico.value.trim(),
     diagnostico_presuntivo: reviewDiagnostico.value.trim(),
     plan_terapeutico: reviewPlanTerapeutico.value.trim(),
-    proximos_pasos: reviewProximosPasos.value.trim()
+    proximos_pasos: reviewProximosPasos.value.trim(),
+    consentimiento_tutor_presencial: consentPresencial
   };
 
   btnConfirmSoap.disabled = true;
@@ -1375,9 +1378,22 @@ formSoapReview.addEventListener('submit', async (e) => {
     });
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const resData = await res.json();
     showToast('Ficha clínica confirmada y sincronizada en PostgreSQL.', 'success');
+
+    // Configurar y mostrar enlace a Receta PDF Oficial
+    const btnOpenReceta = document.getElementById('btn-open-receta-pdf');
+    if (btnOpenReceta) {
+      btnOpenReceta.href = `${API_BASE}/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+      btnOpenReceta.classList.remove('hidden');
+    }
+
+    // Abrir automáticamente la receta médica en nueva pestaña para imprimir o guardar
+    window.open(`${API_BASE}/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`, '_blank');
+
     switchVibeState('idle');
     loadAppointmentsData();
+    loadFichesHistory();
   } catch (err) {
     showToast(`Error al confirmar: ${err.message}`, 'error');
   } finally {
@@ -1614,7 +1630,12 @@ async function loadFichesHistory() {
             ${statusBadge}
           </div>
           <div class="cita-motivo"><strong>Dx:</strong> ${escapeHtml(diag)}</div>
-          <div class="cita-time">📅 ${createdDate} • ID: ${fiche.id.slice(0, 8)}...</div>
+          <div class="cita-time" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.4rem; flex-wrap:wrap; gap:0.5rem;">
+            <span>📅 ${createdDate} • ID: ${fiche.id.slice(0, 8)}...</span>
+            <a href="${API_BASE}/api/v1/covet/fiches/${fiche.id}/receta-pdf?auto_print=1" target="_blank" class="btn-action-small" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.25rem 0.65rem; background:rgba(13,148,136,0.12); border:1px solid var(--teal-primary,#0D9488); border-radius:6px; color:var(--teal-primary,#0D9488); font-weight:700;">
+              📄 Receta PDF
+            </a>
+          </div>
         </div>
       `;
     }).join('');
@@ -1915,11 +1936,164 @@ async function initWhiteLabelBranding() {
   }
 }
 
+// ========================================================
+// 8. ESCUDO DPA LEY 21.719 & SÍNTESIS DE VOZ TTS
+// ========================================================
+const btnVetDpaStatus = document.getElementById('btn-vet-dpa-status');
+const vetDpaLabel = document.getElementById('vet-dpa-label');
+const modalVetDpa = document.getElementById('modal-vet-dpa');
+const btnCloseDpaModal = document.getElementById('btn-close-dpa-modal');
+const formSignDpa = document.getElementById('form-sign-dpa');
+const btnSubmitDpa = document.getElementById('btn-submit-dpa');
+const btnDownloadDpaCert = document.getElementById('btn-download-dpa-cert');
+const inputDpaNombre = document.getElementById('dpa-vet-nombre');
+const inputDpaRut = document.getElementById('dpa-vet-rut');
+const inputDpaReg = document.getElementById('dpa-vet-reg');
+const inputDpaEmail = document.getElementById('dpa-vet-email');
+
+async function checkVetDPAStatus() {
+  if (!vetDpaLabel) return;
+  try {
+    const slugParam = activeVetSlug ? `?slug=${encodeURIComponent(activeVetSlug)}` : '';
+    const res = await fetch(`${API_BASE}/api/v1/covet/vet/dpa-status${slugParam}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.firmado) {
+      vetDpaLabel.textContent = '🛡️ Escudo DPA Activo';
+      if (btnVetDpaStatus) btnVetDpaStatus.style.borderColor = 'var(--emerald-500, #10B981)';
+      if (btnDownloadDpaCert) {
+        btnDownloadDpaCert.classList.remove('hidden');
+        btnDownloadDpaCert.href = `${API_BASE}/api/v1/covet/vet/dpa-certificate${data.folio_dpa ? `?folio=${data.folio_dpa}` : ''}`;
+      }
+      if (inputDpaNombre && data.nombre_profesional) inputDpaNombre.value = data.nombre_profesional;
+      if (inputDpaRut && data.rut_profesional) inputDpaRut.value = data.rut_profesional;
+      if (inputDpaReg && data.registro_colmevet_sag) inputDpaReg.value = data.registro_colmevet_sag;
+    } else {
+      vetDpaLabel.textContent = '🛡️ Firmar Escudo DPA';
+    }
+  } catch (err) {
+    console.warn('[DPA] Error verificando estado DPA:', err);
+  }
+}
+
+if (btnVetDpaStatus && modalVetDpa) {
+  btnVetDpaStatus.addEventListener('click', () => {
+    modalVetDpa.classList.remove('hidden');
+  });
+}
+
+if (btnCloseDpaModal && modalVetDpa) {
+  btnCloseDpaModal.addEventListener('click', () => {
+    modalVetDpa.classList.add('hidden');
+  });
+}
+
+if (formSignDpa) {
+  formSignDpa.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (btnSubmitDpa) {
+      btnSubmitDpa.disabled = true;
+      btnSubmitDpa.textContent = 'Sellando con HMAC...';
+    }
+
+    try {
+      const payload = {
+        nombre_profesional: inputDpaNombre.value.trim(),
+        rut_profesional: inputDpaRut.value.trim(),
+        registro_colmevet_sag: inputDpaReg.value.trim(),
+        email_contacto: inputDpaEmail ? inputDpaEmail.value.trim() : null,
+        clinica_slug: activeVetSlug || null
+      };
+
+      const res = await fetch(`${API_BASE}/api/v1/covet/vet/sign-dpa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+
+      showToast(`¡Escudo DPA suscrito con éxito! Folio: ${data.folio_dpa}`, 'success');
+      vetDpaLabel.textContent = '🛡️ Escudo DPA Activo';
+
+      if (btnDownloadDpaCert) {
+        btnDownloadDpaCert.classList.remove('hidden');
+        btnDownloadDpaCert.href = `${API_BASE}${data.certificate_url}`;
+      }
+
+      window.open(`${API_BASE}${data.certificate_url}`, '_blank');
+      modalVetDpa.classList.add('hidden');
+    } catch (err) {
+      showToast(`Error al suscribir DPA: ${err.message}`, 'error');
+    } finally {
+      if (btnSubmitDpa) {
+        btnSubmitDpa.disabled = false;
+        btnSubmitDpa.textContent = '🛡️ Firmar y Sellar Contrato DPA';
+      }
+    }
+  });
+}
+
+// Síntesis de Voz (TTS) para Lectura en Terreno
+const btnTtsSoap = document.getElementById('btn-tts-soap');
+const ttsLabel = document.getElementById('tts-label');
+
+function toggleSoapTTS() {
+  if (!('speechSynthesis' in window)) {
+    showToast('Tu navegador no soporta síntesis de voz automática.', 'info');
+    return;
+  }
+
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    resetTTSState();
+    return;
+  }
+
+  const petName = reviewPacienteNombre ? reviewPacienteNombre.value.trim() : 'el paciente';
+  const diag = reviewDiagnostico ? reviewDiagnostico.value.trim() : 'Sin diagnóstico registrado';
+  const plan = reviewPlanTerapeutico ? reviewPlanTerapeutico.value.trim() : 'Sin plan terapéutico';
+
+  const textToRead = `Resumen clínico para ${petName}. Diagnóstico presuntivo: ${diag}. Plan terapéutico y receta: ${plan}`;
+
+  const utterance = new SpeechSynthesisUtterance(textToRead);
+  utterance.lang = 'es-CL';
+
+  const voices = window.speechSynthesis.getVoices();
+  const esVoice = voices.find(v => v.lang === 'es-CL') || voices.find(v => v.lang.startsWith('es'));
+  if (esVoice) utterance.voice = esVoice;
+
+  utterance.rate = 1.0;
+  utterance.pitch = 1.0;
+
+  utterance.onstart = () => {
+    if (btnTtsSoap) btnTtsSoap.classList.add('speaking');
+    if (ttsLabel) ttsLabel.textContent = '⏹️ Detener Lectura';
+  };
+
+  utterance.onend = () => resetTTSState();
+  utterance.onerror = () => resetTTSState();
+
+  window.speechSynthesis.speak(utterance);
+}
+
+function resetTTSState() {
+  if (btnTtsSoap) btnTtsSoap.classList.remove('speaking');
+  if (ttsLabel) ttsLabel.textContent = '🔊 Escuchar Resumen SOAP';
+}
+
+if (btnTtsSoap) {
+  btnTtsSoap.addEventListener('click', toggleSoapTTS);
+}
+
 // Ejecución al cargar
 initWhiteLabelBranding();
+checkVetDPAStatus();
 updateOfflineBanner();
 if (isSunModeActive) {
   setSunMode(true);
 }
+
 
 
