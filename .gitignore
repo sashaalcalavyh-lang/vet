@@ -9,3 +9,6 @@ venv/
 .DS_Store
 *.log
 data/*.db
+*.enc
+*.key
+backups_offsite/
