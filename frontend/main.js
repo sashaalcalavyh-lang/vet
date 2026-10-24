@@ -1054,6 +1054,17 @@ const btnRefresh = document.getElementById('btn-refresh');
 const fichesHistoryList = document.getElementById('fiches-history-list');
 const btnRefreshFiches = document.getElementById('btn-refresh-fiches');
 
+// Modal de Éxito Post-Confirmación SOAP (#modal-success)
+const modalSuccess = document.getElementById('modal-success');
+const modalSuccessPaciente = document.getElementById('modal-success-paciente');
+const modalSuccessTutor = document.getElementById('modal-success-tutor');
+const modalSuccessPhone = document.getElementById('modal-success-phone');
+const btnSuccessWhatsAppShare = document.getElementById('btn-success-whatsapp-share');
+const btnSuccessDownloadPdf = document.getElementById('btn-success-download-pdf');
+const btnCloseModalSuccess = document.getElementById('btn-close-modal-success');
+let currentSuccessFiche = null;
+let cachedFichesHistory = [];
+
 const toastContainer = document.getElementById('toast-container');
 
 // Tabs en Vet Mode
@@ -1339,6 +1350,91 @@ document.querySelectorAll('.glass-textarea.auto-resize').forEach(ta => {
   ta.addEventListener('input', () => autoResizeTextarea(ta));
 });
 
+// ========================================================
+// 4.1 DESPACHO WHATSAPP CLÍNICO NATIVO ($0 COSTO API) & LEY 21.719
+// ========================================================
+function buildVetWhatsAppLink(fiche) {
+  if (!fiche) return '';
+  const json = fiche.json_estructurado || {};
+
+  const ficheId = fiche.id || fiche.fiche_id || '';
+  const tutorNombre = (fiche.tutor_nombre || json.tutor_nombre || 'Tutor').trim();
+  const pacienteNombre = (fiche.paciente_nombre || json.paciente_nombre || 'Paciente').trim();
+  const diagPresuntivo = (fiche.diagnostico_presuntivo || json.diagnostico_presuntivo || 'En observación clínica').trim();
+  const planTerapeutico = (fiche.plan_terapeutico || json.plan_terapeutico || 'Indicaciones según criterio médico veterinario.').trim();
+  const proximosPasos = (fiche.proximos_pasos || json.proximos_pasos || 'Según evolución clínica o fecha indicada.').trim();
+
+  // Limpia el número telefónico dejando solo dígitos (si empieza con 9 y tiene 9 dígitos, antepón 56)
+  const rawPhone = fiche.tutor_telefono || json.tutor_telefono || '';
+  let cleanPhone = String(rawPhone || '').replace(/\D/g, '');
+  if (cleanPhone.length === 9 && cleanPhone.startsWith('9')) {
+    cleanPhone = '56' + cleanPhone;
+  } else if (cleanPhone.length === 8) {
+    cleanPhone = '569' + cleanPhone;
+  }
+
+  const pdfUrl = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+
+  const msg = 
+`🩺 *CoVet — Resumen de Atención y Receta Médica Oficial*
+
+Hola *${tutorNombre}*, te comparto el resumen clínico y la receta de la consulta de *${pacienteNombre}*:
+
+📋 *Diagnóstico Presuntivo:*
+${diagPresuntivo}
+
+💊 *Receta e Indicaciones (Rp):*
+${planTerapeutico}
+
+📅 *Próximo Control:*
+${proximosPasos}
+
+📄 *Descargar Receta Médica Oficial (PDF con firma digital):*
+${pdfUrl}
+
+🔒 _Emitido en cumplimiento de la Ley N° 21.719._`;
+
+  const encodedMsg = encodeURIComponent(msg);
+  return cleanPhone ? `https://wa.me/${cleanPhone}?text=${encodedMsg}` : `https://wa.me/?text=${encodedMsg}`;
+}
+
+function openVetWhatsAppChat(fiche) {
+  if (!fiche) return;
+  const json = fiche.json_estructurado || {};
+
+  // Ley 21.719: aviso preventivo si consentimiento_whatsapp == false o activo_whatsapp == false
+  const consentWhatsapp = fiche.consentimiento_whatsapp;
+  const activoWhatsapp = fiche.activo_whatsapp;
+  const consentPresencial = fiche.consentimiento_tutor_presencial ?? json.consentimiento_tutor_presencial;
+  const jsonConsentWa = json.consentimiento_whatsapp;
+  const jsonActivoWa = json.activo_whatsapp;
+
+  const hasNoConsent = (
+    consentWhatsapp === false ||
+    activoWhatsapp === false ||
+    consentPresencial === false ||
+    jsonConsentWa === false ||
+    jsonActivoWa === false
+  );
+
+  if (hasNoConsent) {
+    const proceed = confirm(
+      "⚠️ Aviso Preventivo — Ley N° 21.719 (Protección de Datos Personales):\n\n" +
+      "El tutor registró consentimiento_whatsapp = false o no autorizó mensajes directos.\n\n" +
+      "¿Deseas abrir la conversación de WhatsApp bajo tu responsabilidad y criterio profesional médico presencial?"
+    );
+    if (!proceed) return;
+  }
+
+  const url = buildVetWhatsAppLink(fiche);
+  if (url) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
+
+window.buildVetWhatsAppLink = buildVetWhatsAppLink;
+window.openVetWhatsAppChat = openVetWhatsAppChat;
+
 // Confirmación de Ficha SOAP (PUT)
 formSoapReview.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1381,17 +1477,38 @@ formSoapReview.addEventListener('submit', async (e) => {
     const resData = await res.json();
     showToast('Ficha clínica confirmada y sincronizada en PostgreSQL.', 'success');
 
-    // Configurar y mostrar enlace a Receta PDF Oficial
+    // Preparamos objeto de ficha confirmada para el modal y WhatsApp
+    currentSuccessFiche = {
+      id: ficheId,
+      tutor_nombre: payload.tutor_nombre,
+      tutor_telefono: payload.tutor_telefono,
+      paciente_nombre: payload.paciente_nombre,
+      diagnostico_presuntivo: payload.diagnostico_presuntivo,
+      plan_terapeutico: payload.plan_terapeutico,
+      proximos_pasos: payload.proximos_pasos,
+      consentimiento_whatsapp: payload.consentimiento_tutor_presencial,
+      consentimiento_tutor_presencial: payload.consentimiento_tutor_presencial,
+      json_estructurado: payload
+    };
+
+    // Actualizamos campos del modal de éxito
+    if (modalSuccessPaciente) modalSuccessPaciente.textContent = payload.paciente_nombre || 'Paciente';
+    if (modalSuccessTutor) modalSuccessTutor.textContent = payload.tutor_nombre || 'Tutor';
+    if (modalSuccessPhone) modalSuccessPhone.textContent = payload.tutor_telefono || '--';
+    if (btnSuccessDownloadPdf) {
+      btnSuccessDownloadPdf.href = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+    }
+
+    // Configurar y mostrar enlace a Receta PDF Oficial en la barra de revisión
     const btnOpenReceta = document.getElementById('btn-open-receta-pdf');
     if (btnOpenReceta) {
-      btnOpenReceta.href = `${API_BASE}/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+      btnOpenReceta.href = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
       btnOpenReceta.classList.remove('hidden');
     }
 
-    // Abrir automáticamente la receta médica en nueva pestaña para imprimir o guardar
-    window.open(`${API_BASE}/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`, '_blank');
+    // Mostrar modal de éxito (#modal-success) para despacho 1-Clic
+    if (modalSuccess) modalSuccess.classList.remove('hidden');
 
-    switchVibeState('idle');
     loadAppointmentsData();
     loadFichesHistory();
   } catch (err) {
@@ -1401,6 +1518,31 @@ formSoapReview.addEventListener('submit', async (e) => {
     btnConfirmSoap.innerHTML = `<span class="btn-icon">✓</span> <span class="btn-text">[✓] Confirmar Ficha y Enviar por WhatsApp</span>`;
   }
 });
+
+// Modal de Éxito Post-Confirmación (#modal-success) Listeners
+if (btnCloseModalSuccess) {
+  btnCloseModalSuccess.addEventListener('click', () => {
+    if (modalSuccess) modalSuccess.classList.add('hidden');
+    switchVibeState('idle');
+  });
+}
+
+if (btnSuccessWhatsAppShare) {
+  btnSuccessWhatsAppShare.addEventListener('click', () => {
+    if (currentSuccessFiche) {
+      openVetWhatsAppChat(currentSuccessFiche);
+    }
+  });
+}
+
+if (modalSuccess) {
+  modalSuccess.addEventListener('click', (e) => {
+    if (e.target === modalSuccess) {
+      modalSuccess.classList.add('hidden');
+      switchVibeState('idle');
+    }
+  });
+}
 
 btnDiscardReview.addEventListener('click', () => {
   if (confirm('¿Descartar esta ficha y volver al inicio?')) switchVibeState('idle');
@@ -1601,6 +1743,7 @@ async function loadFichesHistory() {
     const res = await fetch(`${API_BASE}/api/v1/covet/fiches?limit=25`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const fiches = await res.json();
+    cachedFichesHistory = Array.isArray(fiches) ? fiches : [];
 
     if (!fiches || fiches.length === 0) {
       fichesHistoryList.innerHTML = `<div class="empty-state"><p>No hay fichas clínicas registradas aún.</p></div>`;
@@ -1609,9 +1752,9 @@ async function loadFichesHistory() {
 
     fichesHistoryList.innerHTML = fiches.map(fiche => {
       const json = fiche.json_estructurado || {};
-      const petName = json.paciente_nombre || 'Paciente';
-      const tutorName = json.tutor_nombre || 'Tutor';
-      const diag = json.diagnostico_presuntivo || 'Sin diagnóstico registrado';
+      const petName = json.paciente_nombre || fiche.paciente_nombre || 'Paciente';
+      const tutorName = json.tutor_nombre || fiche.tutor_nombre || 'Tutor';
+      const diag = json.diagnostico_presuntivo || fiche.diagnostico_presuntivo || 'Sin diagnóstico registrado';
       const createdDate = fiche.fecha_creacion ? new Date(fiche.fecha_creacion).toLocaleString('es-CL') : 'Reciente';
 
       let statusBadge = '<span class="cita-status-tag confirmed">✓ CONFIRMADA</span>';
@@ -1632,13 +1775,32 @@ async function loadFichesHistory() {
           <div class="cita-motivo"><strong>Dx:</strong> ${escapeHtml(diag)}</div>
           <div class="cita-time" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.4rem; flex-wrap:wrap; gap:0.5rem;">
             <span>📅 ${createdDate} • ID: ${fiche.id.slice(0, 8)}...</span>
-            <a href="${API_BASE}/api/v1/covet/fiches/${fiche.id}/receta-pdf?auto_print=1" target="_blank" class="btn-action-small" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.25rem 0.65rem; background:rgba(13,148,136,0.12); border:1px solid var(--teal-primary,#0D9488); border-radius:6px; color:var(--teal-primary,#0D9488); font-weight:700;">
-              📄 Receta PDF
-            </a>
+            <div class="history-card-actions">
+              <button type="button" class="btn-history-wa" data-fiche-id="${fiche.id}" title="Reenviar Receta por WhatsApp (1-Clic)">
+                📲 WhatsApp
+              </button>
+              <a href="https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${fiche.id}/receta-pdf?auto_print=1" target="_blank" class="btn-action-small" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.25rem 0.65rem; background:rgba(13,148,136,0.12); border:1px solid var(--teal-primary,#0D9488); border-radius:6px; color:var(--teal-primary,#0D9488); font-weight:700;">
+                📄 Receta PDF
+              </a>
+            </div>
           </div>
         </div>
       `;
     }).join('');
+
+    // Listener para botones de WhatsApp rápido en el historial
+    fichesHistoryList.querySelectorAll('.btn-history-wa').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const fId = btn.getAttribute('data-fiche-id');
+        const found = cachedFichesHistory.find(f => String(f.id) === String(fId));
+        if (found) {
+          openVetWhatsAppChat(found);
+        } else {
+          openVetWhatsAppChat({ id: fId });
+        }
+      });
+    });
   } catch (err) {
     fichesHistoryList.innerHTML = `<div class="empty-state"><p>Error cargando fichas: ${err.message}</p></div>`;
   }

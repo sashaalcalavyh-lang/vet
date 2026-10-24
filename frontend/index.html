@@ -1265,6 +1265,60 @@
       </div>
     </div>
 
+    <!-- ======================================================= -->
+    <!-- MODAL DE ÉXITO POST-CONFIRMACIÓN SOAP (#modal-success)  -->
+    <!-- ======================================================= -->
+    <div class="modal-backdrop hidden" id="modal-success">
+      <div class="glass-panel modal-success-card">
+        <div class="modal-success-header">
+          <div class="success-icon-badge">✅</div>
+          <h3>¡Ficha Clínica y Receta Confirmada!</h3>
+          <p id="modal-success-subtitle">La atención fue guardada en PostgreSQL y despachada al flujo n8n.</p>
+        </div>
+
+        <div class="modal-success-body">
+          <div class="success-details-box" id="modal-success-details">
+            <div class="success-detail-row">
+              <span class="detail-label">Paciente:</span>
+              <strong id="modal-success-paciente">--</strong>
+            </div>
+            <div class="success-detail-row">
+              <span class="detail-label">Tutor(a):</span>
+              <span id="modal-success-tutor">--</span>
+            </div>
+            <div class="success-detail-row">
+              <span class="detail-label">WhatsApp Tutor:</span>
+              <span id="modal-success-phone" class="font-mono">--</span>
+            </div>
+            <div class="success-detail-row">
+              <span class="detail-label">Documento:</span>
+              <span class="badge-pdf-hmac">Receta Médica con Firma HMAC</span>
+            </div>
+          </div>
+
+          <div class="modal-success-actions">
+            <!-- Botón Destacado WhatsApp Nativo ($0 Costo API) -->
+            <button type="button" class="btn-success-wa" id="btn-success-whatsapp-share">
+              <span class="btn-icon">📲</span>
+              <span class="btn-text">Enviar Receta PDF por mi WhatsApp (1-Clic)</span>
+            </button>
+
+            <!-- Botón Ver Receta PDF -->
+            <a href="#" target="_blank" class="btn-success-pdf" id="btn-success-download-pdf">
+              <span class="btn-icon">📄</span>
+              <span class="btn-text">Ver Receta PDF</span>
+            </a>
+          </div>
+        </div>
+
+        <div class="modal-success-footer">
+          <button type="button" class="btn-modal-close-success" id="btn-close-modal-success">
+            Volver a la Consulta
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Footer General -->
     <footer class="app-footer">
       <p>CoVet • Núcleo Clínico SOAP, Triaje con IA & Fidelización WhatsApp • Monorepo Hetzner VPS + Vercel</p>
