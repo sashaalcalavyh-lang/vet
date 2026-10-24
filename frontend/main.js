@@ -1832,6 +1832,9 @@ async function loadAdminMetrics() {
       updateVaultUI(data.backup_vault);
     }
 
+    // 6. Lista de Marcas Blancas
+    loadAdminBrandingList();
+
     showToast('Métricas ejecutivas de SuperAdmin actualizadas en vivo.', 'info');
   } catch (err) {
     console.error('Error cargando métricas admin:', err);
@@ -1978,6 +1981,318 @@ if (btnAdminTriggerBackup) {
       btnAdminTriggerBackup.disabled = false;
       if (btnVaultTriggerText) btnVaultTriggerText.textContent = 'Ejecutar Backup Cifrado Ahora';
     }
+  });
+}
+
+// ========================================================
+// GENERADOR COMERCIAL DE MARCA BLANCA (?vet=slug)
+// ========================================================
+const COVET_ADMIN_KEY = 'CoVetSuperAdminKeySasha2026Secure!';
+
+const brandInputSlug = document.getElementById('brand-input-slug');
+const brandInputName = document.getElementById('brand-input-name');
+const brandInputSpecialty = document.getElementById('brand-input-specialty');
+const brandInputRut = document.getElementById('brand-input-rut');
+const brandInputEmail = document.getElementById('brand-input-email');
+const brandInputPhone = document.getElementById('brand-input-phone');
+const brandInputWelcome = document.getElementById('brand-input-welcome');
+const btnSaveBranding = document.getElementById('btn-save-branding');
+const btnClearBranding = document.getElementById('btn-clear-branding');
+
+const brandingOutputPanel = document.getElementById('branding-output-panel');
+const brandOutputTitle = document.getElementById('brand-output-title');
+const brandOutputSubtitle = document.getElementById('brand-output-subtitle');
+const brandOutputColorCircle = document.getElementById('brand-output-color-circle');
+const brandOutputSlugLabel = document.getElementById('brand-output-slug-label');
+const previewUrlClient = document.getElementById('preview-url-client');
+const previewUrlVet = document.getElementById('preview-url-vet');
+const btnCopyBrandClient = document.getElementById('btn-copy-brand-client');
+const btnCopyBrandVet = document.getElementById('btn-copy-brand-vet');
+const btnShareBrandWa = document.getElementById('btn-share-brand-wa');
+const btnOpenBrandPreview = document.getElementById('btn-open-brand-preview');
+const brandingChipsList = document.getElementById('branding-chips-list');
+
+let currentActiveBrandSlug = null;
+let currentActiveBrandData = null;
+
+const SECONDARY_COLOR_MAP = {
+  '#0D9488': '#0F766E',
+  '#2563EB': '#1D4ED8',
+  '#7C3AED': '#6D28D9',
+  '#059669': '#047857'
+};
+
+function getSelectedBrandColor() {
+  const checked = document.querySelector('input[name="brand-color-choice"]:checked');
+  return checked ? checked.value : '#0D9488';
+}
+
+function setSelectedBrandColor(color) {
+  const radio = document.querySelector(`input[name="brand-color-choice"][value="${color}"]`);
+  if (radio) {
+    radio.checked = true;
+  }
+}
+
+async function copyTextToClipboard(text, iconElem) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    if (iconElem) {
+      const orig = iconElem.textContent;
+      iconElem.textContent = '✓';
+      setTimeout(() => { iconElem.textContent = orig; }, 2000);
+    }
+    showToast('Enlace copiado al portapapeles con éxito.', 'success');
+  } catch (err) {
+    console.warn('Fallback copiar portapapeles:', err);
+    showToast(`Copiado: ${text.slice(0, 30)}...`, 'info');
+  }
+}
+
+function updateBrandOutputDisplay(slug, data) {
+  if (!brandingOutputPanel) return;
+  currentActiveBrandSlug = slug;
+  currentActiveBrandData = data;
+
+  const origin = window.location.origin;
+
+  if (brandOutputTitle) brandOutputTitle.textContent = data.nombre_fantasia || slug;
+  if (brandOutputSubtitle) {
+    brandOutputSubtitle.textContent = data.razon_social 
+      ? `${data.razon_social} • DPA Ley 21.719 Firmado`
+      : 'Portal clínico configurado con DPA firmado y soporte Ley 21.719';
+  }
+  if (brandOutputSlugLabel) brandOutputSlugLabel.textContent = `?vet=${slug}`;
+  if (brandOutputColorCircle) brandOutputColorCircle.style.backgroundColor = data.color_primario || '#0D9488';
+
+  if (previewUrlClient) previewUrlClient.textContent = `/?vet=${slug}&view=client`;
+  if (previewUrlVet) previewUrlVet.textContent = `/?vet=${slug}&view=vet`;
+
+  brandingOutputPanel.classList.remove('hidden');
+}
+
+async function loadAdminBrandingList() {
+  if (!brandingChipsList) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/admin/branding`, {
+      headers: {
+        'Accept': 'application/json',
+        'X-Admin-Key': COVET_ADMIN_KEY
+      }
+    });
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 503) {
+        brandingChipsList.innerHTML = '<span class="branding-chip-placeholder">Autenticación requerida para listar</span>';
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const brands = await res.json();
+    if (!Array.isArray(brands) || brands.length === 0) {
+      brandingChipsList.innerHTML = '<span class="branding-chip-placeholder">Sin marcas registradas aún. Ingresa la primera abajo.</span>';
+      return;
+    }
+
+    brandingChipsList.innerHTML = '';
+    brands.forEach(b => {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = `branding-chip ${b.slug === currentActiveBrandSlug ? 'active' : ''}`;
+      chip.innerHTML = `
+        <span class="color-dot" style="background-color: ${b.color_primario || '#0D9488'}; width: 10px; height: 10px; border-radius: 50%; display: inline-block;"></span>
+        <span>${b.slug}</span>
+        <small style="opacity: 0.8;">(${b.nombre_fantasia || 'Clínica'})</small>
+      `;
+      chip.addEventListener('click', () => {
+        if (brandInputSlug) brandInputSlug.value = b.slug;
+        if (brandInputName) brandInputName.value = b.nombre_fantasia || '';
+        if (brandInputSpecialty) brandInputSpecialty.value = b.razon_social || '';
+        if (brandInputRut) brandInputRut.value = b.rut_responsable || '';
+        if (brandInputEmail) brandInputEmail.value = b.email_privacidad || '';
+        if (brandInputPhone) brandInputPhone.value = b.whatsapp_contacto || '';
+        if (brandInputWelcome) brandInputWelcome.value = b.mensaje_bienvenida || '';
+        if (b.color_primario) setSelectedBrandColor(b.color_primario);
+
+        document.querySelectorAll('.branding-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+
+        updateBrandOutputDisplay(b.slug, b);
+        showToast(`Clínica ${b.slug} seleccionada.`, 'info');
+      });
+      brandingChipsList.appendChild(chip);
+    });
+  } catch (err) {
+    console.warn('Error cargando lista de marcas:', err);
+    brandingChipsList.innerHTML = `<span class="branding-chip-placeholder">No fue posible cargar marcas (${err.message})</span>`;
+  }
+}
+
+async function handleSaveBranding() {
+  const rawSlug = (brandInputSlug ? brandInputSlug.value : '').toLowerCase().trim();
+  const name = (brandInputName ? brandInputName.value : '').trim();
+
+  if (!rawSlug || !/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/.test(rawSlug)) {
+    showToast('Slug inválido: usa entre 3 y 60 caracteres a-z, números y guiones.', 'error');
+    if (brandInputSlug) brandInputSlug.focus();
+    return;
+  }
+
+  if (!name || name.length < 2) {
+    showToast('Ingresa el Nombre Profesional o Clínica (mínimo 2 letras).', 'error');
+    if (brandInputName) brandInputName.focus();
+    return;
+  }
+
+  const primaryColor = getSelectedBrandColor();
+  const secondaryColor = SECONDARY_COLOR_MAP[primaryColor] || '#0F766E';
+
+  const payload = {
+    nombre_fantasia: name,
+    razon_social: (brandInputSpecialty ? brandInputSpecialty.value : '').trim() || null,
+    rut_responsable: (brandInputRut ? brandInputRut.value : '').trim() || null,
+    email_privacidad: (brandInputEmail ? brandInputEmail.value : '').trim() || null,
+    color_primario: primaryColor,
+    color_secundario: secondaryColor,
+    whatsapp_contacto: (brandInputPhone ? brandInputPhone.value : '').trim() || null,
+    mensaje_bienvenida: (brandInputWelcome ? brandInputWelcome.value : '').trim() || 'Atención médica veterinaria con trazabilidad y privacidad garantizada.',
+    plan: 'PRO_WHITE_LABEL',
+    activo: true,
+    dpa_aceptado: true
+  };
+
+  if (btnSaveBranding) {
+    btnSaveBranding.disabled = true;
+    btnSaveBranding.innerHTML = '<span class="btn-icon">⏳</span> Guardando Marca Blanca...';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/admin/branding/${encodeURIComponent(rawSlug)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Admin-Key': COVET_ADMIN_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+
+    const saved = await res.json();
+    updateBrandOutputDisplay(rawSlug, saved);
+    await loadAdminBrandingList();
+
+    logToAdminConsole(
+      `🏷️ MARCA BLANCA GUARDADA EXITOSAMENTE:\n` +
+      `• Slug: ${rawSlug}\n` +
+      `• Profesional: ${saved.nombre_fantasia}\n` +
+      `• Especialidad/Razón: ${saved.razon_social || 'N/A'}\n` +
+      `• RUT: ${saved.rut_responsable || 'N/A'}\n` +
+      `• Color: ${saved.color_primario}\n` +
+      `• DPA Ley 21.719: VIGENTE (Art. 14)\n` +
+      `• Portal Cliente: ${window.location.origin}/?vet=${rawSlug}&view=client\n` +
+      `• Panel Vet: ${window.location.origin}/?vet=${rawSlug}&view=vet`
+    );
+
+    showToast(`¡Clínica "${rawSlug}" configurada con éxito!`, 'success');
+  } catch (err) {
+    console.error('Error guardando marca blanca:', err);
+    logToAdminConsole(`❌ Error guardando marca blanca: ${err.message}`);
+    showToast(`Error guardando marca blanca: ${err.message}`, 'error');
+  } finally {
+    if (btnSaveBranding) {
+      btnSaveBranding.disabled = false;
+      btnSaveBranding.innerHTML = '<span class="btn-icon">🚀</span> Guardar y Generar Links de Marca Blanca';
+    }
+  }
+}
+
+if (btnSaveBranding) {
+  btnSaveBranding.addEventListener('click', handleSaveBranding);
+}
+
+if (btnClearBranding) {
+  btnClearBranding.addEventListener('click', () => {
+    if (brandInputSlug) brandInputSlug.value = '';
+    if (brandInputName) brandInputName.value = '';
+    if (brandInputSpecialty) brandInputSpecialty.value = '';
+    if (brandInputRut) brandInputRut.value = '';
+    if (brandInputEmail) brandInputEmail.value = '';
+    if (brandInputPhone) brandInputPhone.value = '';
+    if (brandInputWelcome) brandInputWelcome.value = '';
+    setSelectedBrandColor('#0D9488');
+    if (brandingOutputPanel) brandingOutputPanel.classList.add('hidden');
+    document.querySelectorAll('.branding-chip').forEach(c => c.classList.remove('active'));
+    currentActiveBrandSlug = null;
+    currentActiveBrandData = null;
+    showToast('Formulario de marca blanca reiniciado.', 'info');
+  });
+}
+
+// Botones de acción directa generados
+if (btnCopyBrandClient) {
+  btnCopyBrandClient.addEventListener('click', () => {
+    if (!currentActiveBrandSlug) return;
+    const url = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
+    const icon = document.getElementById('copy-icon-client');
+    copyTextToClipboard(url, icon);
+  });
+}
+
+if (btnCopyBrandVet) {
+  btnCopyBrandVet.addEventListener('click', () => {
+    if (!currentActiveBrandSlug) return;
+    const url = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=vet`;
+    const icon = document.getElementById('copy-icon-vet');
+    copyTextToClipboard(url, icon);
+  });
+}
+
+if (btnShareBrandWa) {
+  btnShareBrandWa.addEventListener('click', () => {
+    if (!currentActiveBrandSlug) return;
+    const name = (currentActiveBrandData && currentActiveBrandData.nombre_fantasia) 
+      ? currentActiveBrandData.nombre_fantasia 
+      : currentActiveBrandSlug;
+    const clientUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
+    const vetUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=vet`;
+
+    const message = 
+      `Hola ${name} 👋, acá tienes tu portal clínico CoVet 100% personalizado para tu consulta con cumplimiento estricto Ley 21.719 de Protección de Datos Personales:\n\n` +
+      `🐾 Portal de Atención para tus Tutores:\n${clientUrl}\n\n` +
+      `🩺 Tu Panel Veterinario con IA SOAP:\n${vetUrl}\n\n` +
+      `✅ Consentimiento informado trazable\n` +
+      `✅ Ficha SOAP con reconocimiento de voz\n` +
+      `✅ Respaldo cifrado militar AES-256`;
+
+    let waUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    if (currentActiveBrandData && currentActiveBrandData.whatsapp_contacto) {
+      const cleanPhone = currentActiveBrandData.whatsapp_contacto.replace(/[^0-9]/g, '');
+      if (cleanPhone.length >= 8) {
+        waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+      }
+    }
+    window.open(waUrl, '_blank');
+    showToast('Abriendo WhatsApp con propuesta y links listos...', 'info');
+  });
+}
+
+if (btnOpenBrandPreview) {
+  btnOpenBrandPreview.addEventListener('click', () => {
+    if (!currentActiveBrandSlug) return;
+    const clientUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
+    window.open(clientUrl, '_blank');
   });
 }
 

@@ -942,6 +942,185 @@
         </div>
       </div>
 
+      <!-- ======================================================= -->
+      <!-- GENERADOR COMERCIAL DE MARCA BLANCA (?vet=slug)         -->
+      <!-- ======================================================= -->
+      <div class="glass-panel admin-branding-panel" id="admin-branding-panel">
+        <div class="panel-section-title">
+          <div class="branding-header-title">
+            <h3>🏷️ Generador Comercial Marca Blanca (?vet=slug)</h3>
+            <p>Crea portales clínicos B2B personalizados para veterinarios con cumplimiento Ley 21.719 en 1 clic.</p>
+          </div>
+          <div class="branding-header-badges">
+            <span class="vault-badge-algo">B2B SaaS Multi-Tenant</span>
+            <span class="vault-badge-secure">Ley 21.719 Compliance</span>
+          </div>
+        </div>
+
+        <!-- Selector de Marcas Existentes -->
+        <div class="branding-existing-row" id="branding-existing-container">
+          <span class="branding-chips-label">Clínicas Registradas:</span>
+          <div class="branding-chips-list" id="branding-chips-list">
+            <span class="branding-chip-placeholder">Cargando clínicas...</span>
+          </div>
+        </div>
+
+        <form id="form-admin-branding" class="admin-branding-form" onsubmit="return false;">
+          <div class="branding-form-grid">
+            <!-- Slug URL -->
+            <div class="brand-form-group">
+              <label for="brand-input-slug">Slug URL Identificador <span class="req-star">*</span></label>
+              <div class="input-with-prefix">
+                <span class="input-prefix">?vet=</span>
+                <input type="text" id="brand-input-slug" class="clinical-input" placeholder="dra-carolina" required pattern="[a-z0-9-]+" autocomplete="off" />
+              </div>
+              <small class="brand-field-hint">3 a 60 caracteres (letras minúsculas, números y guiones).</small>
+            </div>
+
+            <!-- Nombre Profesional / Clínica -->
+            <div class="brand-form-group">
+              <label for="brand-input-name">Nombre Profesional / Clínica <span class="req-star">*</span></label>
+              <input type="text" id="brand-input-name" class="clinical-input" placeholder="Dra. Carolina · Veterinaria a Domicilio" required autocomplete="off" />
+              <small class="brand-field-hint">Aparece en cabeceras de atención y recetas oficiales.</small>
+            </div>
+
+            <!-- Especialidad / Razón Social -->
+            <div class="brand-form-group">
+              <label for="brand-input-specialty">Especialidad / Razón Social</label>
+              <input type="text" id="brand-input-specialty" class="clinical-input" placeholder="Medicina Felina y Cirugía (Carolina Rojas SpA)" autocomplete="off" />
+              <small class="brand-field-hint">Razón social de la clínica o especialidad del profesional.</small>
+            </div>
+
+            <!-- RUT Profesional -->
+            <div class="brand-form-group">
+              <label for="brand-input-rut">RUT Profesional / Empresa</label>
+              <input type="text" id="brand-input-rut" class="clinical-input" placeholder="76.123.456-7" autocomplete="off" />
+              <small class="brand-field-hint">Identificación tributaria oficial del Responsable de Datos.</small>
+            </div>
+
+            <!-- Correo ARSOP+ -->
+            <div class="brand-form-group">
+              <label for="brand-input-email">Correo Oficial ARSOP+ (Ley 21.719)</label>
+              <input type="email" id="brand-input-email" class="clinical-input" placeholder="privacidad@dracarolina.cl" autocomplete="off" />
+              <small class="brand-field-hint">Canal formal donde tutores ejercen sus derechos de datos.</small>
+            </div>
+
+            <!-- WhatsApp de Notificaciones -->
+            <div class="brand-form-group">
+              <label for="brand-input-phone">WhatsApp de Notificaciones</label>
+              <input type="tel" id="brand-input-phone" class="clinical-input" placeholder="+56912345678" autocomplete="off" />
+              <small class="brand-field-hint">Número destino para demos, alertas y fichas clínicas SOAP.</small>
+            </div>
+          </div>
+
+          <!-- Selector de Color Primario y Mensaje de Bienvenida -->
+          <div class="branding-secondary-grid">
+            <div class="brand-color-selector-box">
+              <label class="brand-subheading">Color Primario Clínico:</label>
+              <div class="color-swatches-row" id="color-swatches-container">
+                <label class="color-swatch-item">
+                  <input type="radio" name="brand-color-choice" value="#0D9488" checked />
+                  <span class="color-dot" style="background-color: #0D9488;"></span>
+                  <span class="color-meta">
+                    <strong>Teal Clínico</strong>
+                    <code>#0D9488</code>
+                  </span>
+                </label>
+                <label class="color-swatch-item">
+                  <input type="radio" name="brand-color-choice" value="#2563EB" />
+                  <span class="color-dot" style="background-color: #2563EB;"></span>
+                  <span class="color-meta">
+                    <strong>Azul Médico</strong>
+                    <code>#2563EB</code>
+                  </span>
+                </label>
+                <label class="color-swatch-item">
+                  <input type="radio" name="brand-color-choice" value="#7C3AED" />
+                  <span class="color-dot" style="background-color: #7C3AED;"></span>
+                  <span class="color-meta">
+                    <strong>Púrpura Especialista</strong>
+                    <code>#7C3AED</code>
+                  </span>
+                </label>
+                <label class="color-swatch-item">
+                  <input type="radio" name="brand-color-choice" value="#059669" />
+                  <span class="color-dot" style="background-color: #059669;"></span>
+                  <span class="color-meta">
+                    <strong>Esmeralda Salud</strong>
+                    <code>#059669</code>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <div class="brand-welcome-box">
+              <label for="brand-input-welcome" class="brand-subheading">Mensaje de Bienvenida / Slogan:</label>
+              <input type="text" id="brand-input-welcome" class="clinical-input" placeholder="Atención veterinaria integral con trazabilidad y privacidad garantizada." />
+              <small class="brand-field-hint">Aparece en la pantalla de bienvenida y consentimiento del tutor.</small>
+            </div>
+          </div>
+
+          <!-- Botón de Envío -->
+          <div class="branding-actions-submit">
+            <button type="button" class="btn-primary-action btn-save-branding" id="btn-save-branding">
+              <span class="btn-icon">🚀</span> Guardar y Generar Links de Marca Blanca
+            </button>
+            <button type="button" class="btn-secondary-action" id="btn-clear-branding">
+              <span>🧹</span> Limpiar Formulario
+            </button>
+          </div>
+        </form>
+
+        <!-- Bloque de Resultados y Botones de Acción Directa (Al Guardar) -->
+        <div class="branding-output-panel hidden" id="branding-output-panel">
+          <div class="output-banner-header">
+            <div class="output-title-group">
+              <span class="badge-success-live">✅ CLÍNICA WHITE-LABEL ACTIVA</span>
+              <h4 id="brand-output-title">Dra. Carolina · Veterinaria a Domicilio</h4>
+              <p id="brand-output-subtitle">Portal clínico configurado con DPA firmado y soporte Ley 21.719</p>
+            </div>
+            <div class="output-theme-badge">
+              <span class="output-color-circle" id="brand-output-color-circle"></span>
+              <span id="brand-output-slug-label">?vet=dra-carolina</span>
+            </div>
+          </div>
+
+          <div class="branding-links-action-grid">
+            <button type="button" class="btn-brand-action-link" id="btn-copy-brand-client">
+              <span class="action-icon" id="copy-icon-client">📋</span>
+              <div class="action-text-col">
+                <strong>Copiar Link Cliente (?vet=slug&view=client)</strong>
+                <small class="link-url-preview" id="preview-url-client">?vet=slug&view=client</small>
+              </div>
+            </button>
+
+            <button type="button" class="btn-brand-action-link" id="btn-copy-brand-vet">
+              <span class="action-icon" id="copy-icon-vet">📋</span>
+              <div class="action-text-col">
+                <strong>Copiar Link Panel Vet (?vet=slug&view=vet)</strong>
+                <small class="link-url-preview" id="preview-url-vet">?vet=slug&view=vet</small>
+              </div>
+            </button>
+
+            <button type="button" class="btn-brand-action-link btn-brand-wa" id="btn-share-brand-wa">
+              <span class="action-icon">💬</span>
+              <div class="action-text-col">
+                <strong>Enviar Demo por WhatsApp</strong>
+                <small>Abre chat con propuesta y links listos</small>
+              </div>
+            </button>
+
+            <button type="button" class="btn-brand-action-link btn-brand-preview" id="btn-open-brand-preview">
+              <span class="action-icon">👁️</span>
+              <div class="action-text-col">
+                <strong>Abrir Clínica Ahora</strong>
+                <small>Visualizar portal en vivo en nueva pestaña</small>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- Acciones de Prueba & Compliance -->
       <div class="glass-panel admin-actions-panel">
         <div class="panel-section-title">
