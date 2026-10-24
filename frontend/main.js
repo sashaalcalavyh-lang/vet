@@ -1998,6 +1998,7 @@ const brandInputPhone = document.getElementById('brand-input-phone');
 const brandInputWelcome = document.getElementById('brand-input-welcome');
 const btnSaveBranding = document.getElementById('btn-save-branding');
 const btnClearBranding = document.getElementById('btn-clear-branding');
+const btnLoadBranding = document.getElementById('btn-load-branding');
 
 const brandingOutputPanel = document.getElementById('branding-output-panel');
 const brandOutputTitle = document.getElementById('brand-output-title');
@@ -2015,12 +2016,33 @@ const brandingChipsList = document.getElementById('branding-chips-list');
 let currentActiveBrandSlug = null;
 let currentActiveBrandData = null;
 
+// Auto-formateo del slug en minúsculas y guiones
+if (brandInputSlug) {
+  brandInputSlug.addEventListener('input', () => {
+    brandInputSlug.value = brandInputSlug.value
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/--+/g, '-');
+  });
+}
+
 const SECONDARY_COLOR_MAP = {
   '#0D9488': '#0F766E',
   '#2563EB': '#1D4ED8',
   '#7C3AED': '#6D28D9',
   '#059669': '#047857'
 };
+
+function getBrandLinks(slug) {
+  const base = (window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1'))
+    ? window.location.origin
+    : 'https://vet.142.132.233.38.sslip.io';
+  return {
+    client: `${base}/?vet=${encodeURIComponent(slug)}&view=client`,
+    vet: `${base}/?vet=${encodeURIComponent(slug)}&view=vet`,
+    preview: `${base}/?vet=${encodeURIComponent(slug)}`
+  };
+}
 
 function getSelectedBrandColor() {
   const checked = document.querySelector('input[name="brand-color-choice"]:checked');
@@ -2063,7 +2085,7 @@ function updateBrandOutputDisplay(slug, data) {
   currentActiveBrandSlug = slug;
   currentActiveBrandData = data;
 
-  const origin = window.location.origin;
+  const links = getBrandLinks(slug);
 
   if (brandOutputTitle) brandOutputTitle.textContent = data.nombre_fantasia || slug;
   if (brandOutputSubtitle) {
@@ -2074,8 +2096,8 @@ function updateBrandOutputDisplay(slug, data) {
   if (brandOutputSlugLabel) brandOutputSlugLabel.textContent = `?vet=${slug}`;
   if (brandOutputColorCircle) brandOutputColorCircle.style.backgroundColor = data.color_primario || '#0D9488';
 
-  if (previewUrlClient) previewUrlClient.textContent = `/?vet=${slug}&view=client`;
-  if (previewUrlVet) previewUrlVet.textContent = `/?vet=${slug}&view=vet`;
+  if (previewUrlClient) previewUrlClient.textContent = links.client;
+  if (previewUrlVet) previewUrlVet.textContent = links.vet;
 
   brandingOutputPanel.classList.remove('hidden');
 }
@@ -2136,6 +2158,44 @@ async function loadAdminBrandingList() {
   }
 }
 
+async function handleLoadExistingBranding() {
+  const rawSlug = (brandInputSlug ? brandInputSlug.value : '').toLowerCase().trim();
+  if (!rawSlug) {
+    showToast('Ingresa un slug primero para buscar (ej: dra-carolina).', 'warning');
+    if (brandInputSlug) brandInputSlug.focus();
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/branding/${encodeURIComponent(rawSlug)}`);
+    if (!res.ok) {
+      if (res.status === 404) {
+        showToast(`La clínica "${rawSlug}" no existe aún. Puedes crearla con el formulario.`, 'info');
+        return;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (brandInputName) brandInputName.value = data.nombre_fantasia || '';
+    if (brandInputSpecialty) brandInputSpecialty.value = data.razon_social || '';
+    if (brandInputRut) brandInputRut.value = data.rut_responsable || '';
+    if (brandInputEmail) brandInputEmail.value = data.email_privacidad || '';
+    if (brandInputPhone) brandInputPhone.value = data.whatsapp_contacto || '';
+    if (brandInputWelcome) brandInputWelcome.value = data.mensaje_bienvenida || '';
+    if (data.color_primario) setSelectedBrandColor(data.color_primario);
+
+    updateBrandOutputDisplay(rawSlug, data);
+    showToast(`✓ Datos de "${rawSlug}" cargados con éxito.`, 'success');
+  } catch (err) {
+    console.error('Error cargando branding:', err);
+    showToast(`Error al cargar datos: ${err.message}`, 'error');
+  }
+}
+
+if (btnLoadBranding) {
+  btnLoadBranding.addEventListener('click', handleLoadExistingBranding);
+}
+
 async function handleSaveBranding() {
   const rawSlug = (brandInputSlug ? brandInputSlug.value : '').toLowerCase().trim();
   const name = (brandInputName ? brandInputName.value : '').trim();
@@ -2193,16 +2253,17 @@ async function handleSaveBranding() {
     updateBrandOutputDisplay(rawSlug, saved);
     await loadAdminBrandingList();
 
+    const links = getBrandLinks(rawSlug);
     logToAdminConsole(
       `🏷️ MARCA BLANCA GUARDADA EXITOSAMENTE:\n` +
       `• Slug: ${rawSlug}\n` +
       `• Profesional: ${saved.nombre_fantasia}\n` +
-      `• Especialidad/Razón: ${saved.razon_social || 'N/A'}\n` +
+      `• Razón Social: ${saved.razon_social || 'N/A'}\n` +
       `• RUT: ${saved.rut_responsable || 'N/A'}\n` +
       `• Color: ${saved.color_primario}\n` +
       `• DPA Ley 21.719: VIGENTE (Art. 14)\n` +
-      `• Portal Cliente: ${window.location.origin}/?vet=${rawSlug}&view=client\n` +
-      `• Panel Vet: ${window.location.origin}/?vet=${rawSlug}&view=vet`
+      `• Portal Cliente: ${links.client}\n` +
+      `• Panel Vet: ${links.vet}`
     );
 
     showToast(`¡Clínica "${rawSlug}" configurada con éxito!`, 'success');
@@ -2244,18 +2305,18 @@ if (btnClearBranding) {
 if (btnCopyBrandClient) {
   btnCopyBrandClient.addEventListener('click', () => {
     if (!currentActiveBrandSlug) return;
-    const url = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
+    const links = getBrandLinks(currentActiveBrandSlug);
     const icon = document.getElementById('copy-icon-client');
-    copyTextToClipboard(url, icon);
+    copyTextToClipboard(links.client, icon);
   });
 }
 
 if (btnCopyBrandVet) {
   btnCopyBrandVet.addEventListener('click', () => {
     if (!currentActiveBrandSlug) return;
-    const url = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=vet`;
+    const links = getBrandLinks(currentActiveBrandSlug);
     const icon = document.getElementById('copy-icon-vet');
-    copyTextToClipboard(url, icon);
+    copyTextToClipboard(links.vet, icon);
   });
 }
 
@@ -2265,13 +2326,12 @@ if (btnShareBrandWa) {
     const name = (currentActiveBrandData && currentActiveBrandData.nombre_fantasia) 
       ? currentActiveBrandData.nombre_fantasia 
       : currentActiveBrandSlug;
-    const clientUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
-    const vetUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=vet`;
+    const links = getBrandLinks(currentActiveBrandSlug);
 
     const message = 
       `Hola ${name} 👋, acá tienes tu portal clínico CoVet 100% personalizado para tu consulta con cumplimiento estricto Ley 21.719 de Protección de Datos Personales:\n\n` +
-      `🐾 Portal de Atención para tus Tutores:\n${clientUrl}\n\n` +
-      `🩺 Tu Panel Veterinario con IA SOAP:\n${vetUrl}\n\n` +
+      `🐾 Portal de Atención para tus Tutores:\n${links.client}\n\n` +
+      `🩺 Tu Panel Veterinario con IA SOAP:\n${links.vet}\n\n` +
       `✅ Consentimiento informado trazable\n` +
       `✅ Ficha SOAP con reconocimiento de voz\n` +
       `✅ Respaldo cifrado militar AES-256`;
@@ -2291,8 +2351,8 @@ if (btnShareBrandWa) {
 if (btnOpenBrandPreview) {
   btnOpenBrandPreview.addEventListener('click', () => {
     if (!currentActiveBrandSlug) return;
-    const clientUrl = `${window.location.origin}/?vet=${encodeURIComponent(currentActiveBrandSlug)}&view=client`;
-    window.open(clientUrl, '_blank');
+    const links = getBrandLinks(currentActiveBrandSlug);
+    window.open(links.preview, '_blank');
   });
 }
 

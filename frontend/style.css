@@ -3495,6 +3495,31 @@ body[data-active-view="client"] .theme-toggle-btn {
   gap: 0.35rem;
 }
 
+.label-with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.btn-load-slug {
+  background: rgba(37, 99, 235, 0.15);
+  border: 1px solid rgba(37, 99, 235, 0.4);
+  color: #93C5FD;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-load-slug:hover {
+  background: rgba(37, 99, 235, 0.3);
+  color: #FFFFFF;
+  border-color: #60A5FA;
+}
+
 .brand-form-group label {
   font-size: 0.8rem;
   font-weight: 700;

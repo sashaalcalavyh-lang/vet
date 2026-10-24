@@ -948,7 +948,7 @@
       <div class="glass-panel admin-branding-panel" id="admin-branding-panel">
         <div class="panel-section-title">
           <div class="branding-header-title">
-            <h3>🏷️ Generador Comercial Marca Blanca (?vet=slug)</h3>
+            <h3>🎨 Generador Comercial de Marca Blanca (1-Clic)</h3>
             <p>Crea portales clínicos B2B personalizados para veterinarios con cumplimiento Ley 21.719 en 1 clic.</p>
           </div>
           <div class="branding-header-badges">
@@ -969,46 +969,49 @@
           <div class="branding-form-grid">
             <!-- Slug URL -->
             <div class="brand-form-group">
-              <label for="brand-input-slug">Slug URL Identificador <span class="req-star">*</span></label>
+              <div class="label-with-action">
+                <label for="brand-input-slug">Slug URL Identificador <span class="req-star">*</span></label>
+                <button type="button" class="btn-load-slug" id="btn-load-branding" title="Cargar datos de slug existente">🔍 Cargar existente</button>
+              </div>
               <div class="input-with-prefix">
                 <span class="input-prefix">?vet=</span>
                 <input type="text" id="brand-input-slug" class="clinical-input" placeholder="dra-carolina" required pattern="[a-z0-9-]+" autocomplete="off" />
               </div>
-              <small class="brand-field-hint">3 a 60 caracteres (letras minúsculas, números y guiones).</small>
+              <small class="brand-field-hint">Auto-formateado en minúsculas y guiones (ej: <code>dra-carolina</code>).</small>
             </div>
 
-            <!-- Nombre Profesional / Clínica -->
+            <!-- Nombre Profesional / Título -->
             <div class="brand-form-group">
-              <label for="brand-input-name">Nombre Profesional / Clínica <span class="req-star">*</span></label>
-              <input type="text" id="brand-input-name" class="clinical-input" placeholder="Dra. Carolina · Veterinaria a Domicilio" required autocomplete="off" />
-              <small class="brand-field-hint">Aparece en cabeceras de atención y recetas oficiales.</small>
+              <label for="brand-input-name">Nombre Profesional / Título <span class="req-star">*</span></label>
+              <input type="text" id="brand-input-name" class="clinical-input" placeholder="Dra. Carolina Rojas · Veterinaria a Domicilio" required autocomplete="off" />
+              <small class="brand-field-hint">Aparece en cabeceras de atención, recetas y consentimientos.</small>
             </div>
 
-            <!-- Especialidad / Razón Social -->
+            <!-- Razón Social / Responsable Legal Ley 21.719 -->
             <div class="brand-form-group">
-              <label for="brand-input-specialty">Especialidad / Razón Social</label>
-              <input type="text" id="brand-input-specialty" class="clinical-input" placeholder="Medicina Felina y Cirugía (Carolina Rojas SpA)" autocomplete="off" />
-              <small class="brand-field-hint">Razón social de la clínica o especialidad del profesional.</small>
+              <label for="brand-input-specialty">Razón Social / Responsable Legal Ley 21.719</label>
+              <input type="text" id="brand-input-specialty" class="clinical-input" placeholder="Carolina Rojas Veterinaria EIRL" autocomplete="off" />
+              <small class="brand-field-hint">Responsable formal del Tratamiento de Datos (Data Controller).</small>
             </div>
 
-            <!-- RUT Profesional -->
+            <!-- RUT Profesional / Empresa -->
             <div class="brand-form-group">
               <label for="brand-input-rut">RUT Profesional / Empresa</label>
-              <input type="text" id="brand-input-rut" class="clinical-input" placeholder="76.123.456-7" autocomplete="off" />
-              <small class="brand-field-hint">Identificación tributaria oficial del Responsable de Datos.</small>
+              <input type="text" id="brand-input-rut" class="clinical-input" placeholder="76.987.654-3" autocomplete="off" />
+              <small class="brand-field-hint">Identificación tributaria oficial exigida por Ley 21.719.</small>
             </div>
 
-            <!-- Correo ARSOP+ -->
+            <!-- Correo Derechos ARSOP+ -->
             <div class="brand-form-group">
-              <label for="brand-input-email">Correo Oficial ARSOP+ (Ley 21.719)</label>
+              <label for="brand-input-email">Correo Derechos ARSOP+</label>
               <input type="email" id="brand-input-email" class="clinical-input" placeholder="privacidad@dracarolina.cl" autocomplete="off" />
               <small class="brand-field-hint">Canal formal donde tutores ejercen sus derechos de datos.</small>
             </div>
 
-            <!-- WhatsApp de Notificaciones -->
+            <!-- WhatsApp del Prospecto -->
             <div class="brand-form-group">
-              <label for="brand-input-phone">WhatsApp de Notificaciones</label>
-              <input type="tel" id="brand-input-phone" class="clinical-input" placeholder="+56912345678" autocomplete="off" />
+              <label for="brand-input-phone">WhatsApp del Prospecto</label>
+              <input type="tel" id="brand-input-phone" class="clinical-input" placeholder="+56988887777" autocomplete="off" />
               <small class="brand-field-hint">Número destino para demos, alertas y fichas clínicas SOAP.</small>
             </div>
           </div>
@@ -1022,7 +1025,7 @@
                   <input type="radio" name="brand-color-choice" value="#0D9488" checked />
                   <span class="color-dot" style="background-color: #0D9488;"></span>
                   <span class="color-meta">
-                    <strong>Teal Clínico</strong>
+                    <strong>Surgical Teal</strong>
                     <code>#0D9488</code>
                   </span>
                 </label>
@@ -1030,7 +1033,7 @@
                   <input type="radio" name="brand-color-choice" value="#2563EB" />
                   <span class="color-dot" style="background-color: #2563EB;"></span>
                   <span class="color-meta">
-                    <strong>Azul Médico</strong>
+                    <strong>Royal Blue</strong>
                     <code>#2563EB</code>
                   </span>
                 </label>
@@ -1038,7 +1041,7 @@
                   <input type="radio" name="brand-color-choice" value="#7C3AED" />
                   <span class="color-dot" style="background-color: #7C3AED;"></span>
                   <span class="color-meta">
-                    <strong>Púrpura Especialista</strong>
+                    <strong>Feline Violet</strong>
                     <code>#7C3AED</code>
                   </span>
                 </label>
@@ -1046,7 +1049,7 @@
                   <input type="radio" name="brand-color-choice" value="#059669" />
                   <span class="color-dot" style="background-color: #059669;"></span>
                   <span class="color-meta">
-                    <strong>Esmeralda Salud</strong>
+                    <strong>Safe Emerald</strong>
                     <code>#059669</code>
                   </span>
                 </label>
@@ -1055,7 +1058,7 @@
 
             <div class="brand-welcome-box">
               <label for="brand-input-welcome" class="brand-subheading">Mensaje de Bienvenida / Slogan:</label>
-              <input type="text" id="brand-input-welcome" class="clinical-input" placeholder="Atención veterinaria integral con trazabilidad y privacidad garantizada." />
+              <input type="text" id="brand-input-welcome" class="clinical-input" placeholder="Bienvenido a la consulta veterinaria personalizada con trazabilidad y privacidad garantizada." />
               <small class="brand-field-hint">Aparece en la pantalla de bienvenida y consentimiento del tutor.</small>
             </div>
           </div>
@@ -1076,7 +1079,7 @@
           <div class="output-banner-header">
             <div class="output-title-group">
               <span class="badge-success-live">✅ CLÍNICA WHITE-LABEL ACTIVA</span>
-              <h4 id="brand-output-title">Dra. Carolina · Veterinaria a Domicilio</h4>
+              <h4 id="brand-output-title">Dra. Carolina Rojas · Veterinaria a Domicilio</h4>
               <p id="brand-output-subtitle">Portal clínico configurado con DPA firmado y soporte Ley 21.719</p>
             </div>
             <div class="output-theme-badge">
@@ -1089,16 +1092,16 @@
             <button type="button" class="btn-brand-action-link" id="btn-copy-brand-client">
               <span class="action-icon" id="copy-icon-client">📋</span>
               <div class="action-text-col">
-                <strong>Copiar Link Cliente (?vet=slug&view=client)</strong>
-                <small class="link-url-preview" id="preview-url-client">?vet=slug&view=client</small>
+                <strong>Copiar Link Vista Cliente</strong>
+                <small class="link-url-preview" id="preview-url-client">https://vet.142.132.233.38.sslip.io/?vet=slug&view=client</small>
               </div>
             </button>
 
             <button type="button" class="btn-brand-action-link" id="btn-copy-brand-vet">
               <span class="action-icon" id="copy-icon-vet">📋</span>
               <div class="action-text-col">
-                <strong>Copiar Link Panel Vet (?vet=slug&view=vet)</strong>
-                <small class="link-url-preview" id="preview-url-vet">?vet=slug&view=vet</small>
+                <strong>Copiar Link Panel Veterinario</strong>
+                <small class="link-url-preview" id="preview-url-vet">https://vet.142.132.233.38.sslip.io/?vet=slug&view=vet</small>
               </div>
             </button>
 
@@ -1106,7 +1109,7 @@
               <span class="action-icon">💬</span>
               <div class="action-text-col">
                 <strong>Enviar Demo por WhatsApp</strong>
-                <small>Abre chat con propuesta y links listos</small>
+                <small>Abre chat con propuesta y ambos links listos</small>
               </div>
             </button>
 
