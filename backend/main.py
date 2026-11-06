@@ -4737,6 +4737,7 @@ WHATSAPP_VET_TENANTS: Dict[str, Dict[str, Any]] = {
         "comunas_cobertura": "Providencia, Las Condes, Ñuñoa, Vitacura y Santiago Centro",
         "precio_domicilio_clp": 25000,
         "precio_telemedicina_clp": 15000,
+        "telefono_contacto": os.getenv("DANIELA_CONTACT_PHONE", "+56987654321"),
         "membresia_activa": True,
         "precio_membresia_clp": 8990,
         "datos_transferencia": {
@@ -4761,6 +4762,7 @@ WHATSAPP_VET_TENANTS: Dict[str, Dict[str, Any]] = {
         "comunas_cobertura": "La Florida, Macul, Peñalolén, Ñuñoa y Puente Alto",
         "precio_domicilio_clp": 22000,
         "precio_telemedicina_clp": 12000,
+        "telefono_contacto": os.getenv("VET2_CONTACT_PHONE", "+56912345678"),
         "membresia_activa": True,
         "precio_membresia_clp": 7990,
         "datos_transferencia": {
@@ -5536,8 +5538,50 @@ def handle_meta_whatsapp_webhook(
             tenant_cfg = resolve_whatsapp_vet_tenant(incoming_phone_id, ctx)
             clinica_slug = tenant_cfg["clinica_slug"]
 
-            # Comandos globales para abrir el Menú Principal
-            if action_id == "BTN_MENU_PRINCIPAL" or lower_text in ("hola", "menu", "menú", "inicio", "buenas", "empezar"):
+            # =========================================================
+            # COMANDO O BOTÓN: HABLAR CON LA DOCTORA (RUTA DE ESCAPE HUMANO ANTI-DESPERDICIO)
+            # =========================================================
+            if action_id == "BTN_HABLAR_HUMANO" or any(w in lower_text for w in ["humano", "doctora", "llamar", "hablar con", "telefono", "teléfono", "urgente"]):
+                tel_doc = tenant_cfg.get("telefono_contacto", "+56987654321")
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "header": {
+                                    "type": "text",
+                                    "text": f"📞 Contacto Directo — {tenant_cfg['nombre_doctora'][:25]}"
+                                },
+                                "body": {
+                                    "text": (
+                                        f"Puedes comunicarte o llamar directamente a *{tenant_cfg['nombre_doctora']}* a su línea directa:\n\n"
+                                        f"📱 *Teléfono / WhatsApp:* `{tel_doc}`\n\n"
+                                        "Si es una urgencia vital, te recomendamos llamar directamente para coordinar asistencia inmediata."
+                                    )
+                                },
+                                "footer": {
+                                    "text": "Atención personalizada • Sin intermediarios"
+                                },
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Hora"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Ver Planes"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                continue
                 session_row.current_step = "MAIN_MENU"
                 session_row.updated_at = ahora
                 db.commit()
@@ -5844,8 +5888,56 @@ def handle_meta_whatsapp_webhook(
                 has_symptom_signal = any(k in lower_text for k in symptom_keywords) or step == "AWAITING_TRIAGE_SYMPTOMS"
 
                 if not has_symptom_signal:
-                    # FLUJO CONVERSACIONAL CON MEMORIA MULTI-TURNO: Pregunta sobre horarios, comunas, precios o dudas
+                    # FLUJO CONVERSACIONAL CON MEMORIA MULTI-TURNO Y CORTE ANTI-DESPERDICIO DE MENSAJES
                     chat_history = ctx.get("chat_history", [])
+                    consecutive_chat_count = int(ctx.get("consecutive_chat_count", 0)) + 1
+                    ctx["consecutive_chat_count"] = consecutive_chat_count
+
+                    # Si el usuario lleva más de 3 preguntas abiertas seguidas sin agendar, forzar escape humano para no gastar API
+                    if consecutive_chat_count >= 4:
+                        tel_doc = tenant_cfg.get("telefono_contacto", "+56987654321")
+                        ctx["consecutive_chat_count"] = 0
+                        session_row.context_json = ctx
+                        session_row.current_step = "MAIN_MENU"
+                        session_row.updated_at = ahora
+                        db.commit()
+
+                        outbound_dispatches.append(
+                            send_whatsapp_cloud_message(
+                                raw_from,
+                                {
+                                    "type": "interactive",
+                                    "interactive": {
+                                        "type": "button",
+                                        "header": {
+                                            "type": "text",
+                                            "text": "📞 ¿Prefieres hablar directamente?"
+                                        },
+                                        "body": {
+                                            "text": (
+                                                f"Veo que tienes varias dudas específicas sobre tu caso, *{profile_name}*.\n\n"
+                                                f"Para no demorar la atención y resolver todo de inmediato, puedes llamar directamente a *{tenant_cfg['nombre_doctora']}* al `{tel_doc}`, "
+                                                "o apartar tu consulta aquí con un solo toque:"
+                                            )
+                                        },
+                                        "footer": {
+                                            "text": "Optimización de atención • Sin rodeos"
+                                        },
+                                        "action": {
+                                            "buttons": [
+                                                {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Hora"}},
+                                                {"type": "reply", "reply": {"id": "BTN_HABLAR_HUMANO", "title": "📞 Ver Teléfono"}},
+                                                {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                            ]
+                                        }
+                                    }
+                                },
+                                tenant_cfg=tenant_cfg,
+                                incoming_phone_number_id=incoming_phone_id
+                            )
+                        )
+                        continue
+
                     chat_history.append({"role": "user", "content": user_text})
 
                     ai_reply = generate_whatsapp_conversational_reply_ai_sync(
@@ -5876,7 +5968,7 @@ def handle_meta_whatsapp_webhook(
                                     "action": {
                                         "buttons": [
                                             {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Consulta"}},
-                                            {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Ver Planes"}},
+                                            {"type": "reply", "reply": {"id": "BTN_HABLAR_HUMANO", "title": "📞 Hablar c/Doctora"}},
                                             {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
                                         ]
                                     }
