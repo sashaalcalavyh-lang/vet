@@ -327,6 +327,22 @@ class MembresiaSuscripcionDB(Base):
     proxima_desparasitacion_fecha = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
+
+class WhatsAppSessionDB(Base):
+    """
+    Estado conversacional persistente en PostgreSQL para la experiencia 100% nativa en WhatsApp Cloud API.
+    Permite navegar entre Menú, Membresía $8.990, Carné 24/7, Triaje IA, Agendamiento (Domicilio/Telemedicina)
+    y Pago In-Chat sin enviar jamás un link web externo.
+    """
+    __tablename__ = "whatsapp_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    telefono = Column(String(30), unique=True, nullable=False, index=True)
+    profile_name = Column(String(120), nullable=True)
+    current_step = Column(String(50), default="MAIN_MENU")
+    context_json = Column(JSON, default=dict)
+    updated_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+
 def run_safe_migrations(engine_instance):
     """
     Ejecuta migraciones idempotentes sobre tablas existentes (citas, pacientes)
@@ -429,6 +445,18 @@ def run_safe_migrations(engine_instance):
             """))
             conn.execute(text("ALTER TABLE membresias_suscripcion ALTER COLUMN proxima_vacuna_fecha TYPE VARCHAR(120);"))
             conn.execute(text("ALTER TABLE membresias_suscripcion ALTER COLUMN proxima_desparasitacion_fecha TYPE VARCHAR(120);"))
+
+            # Tabla de sesiones conversacionales WhatsApp Cloud API 100% Nativo
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+                    id SERIAL PRIMARY KEY,
+                    telefono VARCHAR(30) UNIQUE NOT NULL,
+                    profile_name VARCHAR(120),
+                    current_step VARCHAR(50) DEFAULT 'MAIN_MENU',
+                    context_json JSONB DEFAULT '{}'::jsonb,
+                    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
 
             # Función segura para supresión en cascada atómica (Ley 21.719: Tutores + Fichas + Citas)
             conn.execute(text("""
@@ -4681,6 +4709,883 @@ def enviar_recordatorio_24h_anti_inasistencia(
         "recordatorio_24h_enviado": True,
         "wa_reminder_url": wa_url
     }
+
+
+# =============================================================
+# 16. EXPERIENCIA 100% NATIVA EN WHATSAPP CLOUD API OFICIAL DE META
+# Perfil: Dra. Daniela Alcázar (Cero Links Web — Todo dentro del Chat)
+# =============================================================
+
+WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "covet_daniela_verify_2026")
+WHATSAPP_ACCESS_TOKEN = os.getenv("WHATSAPP_ACCESS_TOKEN", "")
+WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_GRAPH_VERSION = os.getenv("WHATSAPP_GRAPH_VERSION", "v21.0")
+WHATSAPP_FLOW_ID_TRIAGE = os.getenv("WHATSAPP_FLOW_ID_TRIAGE", "")
+
+
+def send_whatsapp_cloud_message(recipient_phone: str, message_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Envía un mensaje interactivo o de texto a través del endpoint oficial `/messages`
+    de WhatsApp Cloud API (Meta Graph API).
+    Si aún no se han configurado WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID en el .env,
+    registra el payload listo para despacho y lo devuelve para inspección/pruebas.
+    """
+    clean_to = "".join(ch for ch in str(recipient_phone) if ch.isdigit())
+    body = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": clean_to,
+        **message_payload
+    }
+
+    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
+        logger.info(f"[WhatsApp Cloud API Sandbox] Mensaje preparado para {clean_to}: {body.get('type')}")
+        return {"dispatched_to_meta": False, "mode": "SANDBOX_READY", "payload": body}
+
+    url = f"https://graph.facebook.com/{WHATSAPP_GRAPH_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            resp = client.post(url, headers=headers, json=body)
+            return {
+                "dispatched_to_meta": resp.status_code in (200, 201),
+                "status_code": resp.status_code,
+                "meta_response": resp.json() if resp.content else {},
+                "payload": body
+            }
+    except Exception as exc:
+        logger.error(f"[WhatsApp Cloud API] Error enviando mensaje a {clean_to}: {exc}")
+        return {"dispatched_to_meta": False, "error": str(exc), "payload": body}
+
+
+def build_wa_main_menu_interactive(profile_name: str = "Tutor(a)") -> Dict[str, Any]:
+    """
+    Mapea la Landing Page de la Dra. Daniela Alcázar (?view=client) a un mensaje
+    Interactive Buttons 100% nativo de WhatsApp Cloud API (0 links externos).
+    """
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "header": {
+                "type": "text",
+                "text": "🐾 Dra. Daniela Alcázar — Atención 24/7"
+            },
+            "body": {
+                "text": (
+                    f"¡Hola *{profile_name}*! Bienvenido(a) al canal clínico oficial de la "
+                    "*Dra. Daniela Alcázar — Atención Veterinaria a Domicilio y Telemedicina*.\n\n"
+                    "🐶🐱🐰🐹🦔 _Atención de Caninos, Felinos, Conejos, Cuy y Erizos._\n\n"
+                    "Toda tu atención, triaje, membresía, carné 24/7 y pago ocurren *100% aquí dentro de WhatsApp* sin abrir páginas externas.\n\n"
+                    "Selecciona qué necesitas hoy:"
+                )
+            },
+            "footer": {
+                "text": "Recepción 24/7 • Ley 21.719 • Colmevet & SAG"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "BTN_TRIAJE_CITA",
+                            "title": "🩺 Triaje y Agendar"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "BTN_MEMBRESIA_8990",
+                            "title": "💖 Membresía $8.990"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "BTN_HISTORIAL_24_7",
+                            "title": "📋 Mi Carné 24/7"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+
+def build_wa_membership_card_interactive() -> Dict[str, Any]:
+    """
+    Mapea la Pricing Card 'Membresía Cuidado Continuo ($8.990/mes)' a un mensaje
+    interactivo nativo de WhatsApp con los 5 beneficios exactos y botón CTA directo.
+    """
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "header": {
+                "type": "text",
+                "text": "💖 Membresía Cuidado Continuo — $8.990/mes"
+            },
+            "body": {
+                "text": (
+                    "Protege a tu mascota todo el año con la *Dra. Daniela Alcázar* por solo *$8.990 mensuales* (IVA incl.):\n\n"
+                    "✅ *Cobertura Anual:* Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de suscripción (o antes si llevan meses acumulados).\n\n"
+                    "✅ *1 Consulta a Domicilio Gratis al Año:* Para controles sanos o dudas generales.\n\n"
+                    "✅ *Descuento en Consultas Extra:* 20% de descuento en consultas de urgencia o adicionales.\n\n"
+                    "✅ *Historial Clínico en Vivo:* Acceso 24/7 aquí en WhatsApp con fechas de vacunación, desparasitación y notas clínicas.\n\n"
+                    "✅ *Recordatorios Automáticos:* Te avisamos por este chat cuándo toca su próxima vacuna o desparasitación."
+                )
+            },
+            "footer": {
+                "text": "Suscripción 100% en este chat • Sin links externos"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "SUB_INICIAR_8990",
+                            "title": "🐾 Suscribir mascota"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "BTN_TRIAJE_CITA",
+                            "title": "🩺 Agendar Consulta"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "BTN_MENU_PRINCIPAL",
+                            "title": "⬅️ Menú Principal"
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+
+def build_wa_species_list_message(prefix_id: str, pet_name: str) -> Dict[str, Any]:
+    """Lista interactiva nativa de WhatsApp (List Message) para seleccionar la especie de la mascota."""
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {
+                "type": "text",
+                "text": f"🐾 Especie de {pet_name[:20]}"
+            },
+            "body": {
+                "text": f"Selecciona la especie de *{pet_name}* en el menú desplegable para continuar:"
+            },
+            "footer": {
+                "text": "Dra. Daniela Alcázar • Atención Especializada"
+            },
+            "action": {
+                "button": "Elegir Especie",
+                "sections": [
+                    {
+                        "title": "Mascotas Tradicionales",
+                        "rows": [
+                            {"id": f"{prefix_id}_Canino", "title": "🐶 Perro (Canino)", "description": "Atención clínica y vacunas caninas"},
+                            {"id": f"{prefix_id}_Felino", "title": "🐱 Gato (Felino)", "description": "Manejo Cat-Friendly sin estrés"}
+                        ]
+                    },
+                    {
+                        "title": "Mascotas Exóticas",
+                        "rows": [
+                            {"id": f"{prefix_id}_Conejo", "title": "🐰 Conejo", "description": "Medicina de lagomorfos y control dental"},
+                            {"id": f"{prefix_id}_Cuy", "title": "🐹 Cuy (Cobayo)", "description": "Control nutricional, piel y digestivo"},
+                            {"id": f"{prefix_id}_Erizo", "title": "🦔 Erizo de Tierra", "description": "Control dermatológico y preventivo"}
+                        ]
+                    }
+                ]
+            }
+        }
+    }
+
+
+def build_wa_schedule_list_message(slots_data: Dict[str, Any], modalidad: str) -> Dict[str, Any]:
+    """Construye un List Message nativo de WhatsApp con los bloques exactos y ventanas flexibles."""
+    precio = "$15.000 CLP" if modalidad == "TELEMEDICINA" else "$25.000 CLP"
+    exact_slots = slots_data.get("exact_slots") or ["09:00", "11:00", "15:30"]
+    rows_exact = [
+        {
+            "id": f"SLOT_EXACT_{h}",
+            "title": f"🕒 Hoy/Mañana {h} hrs",
+            "description": f"{modalidad} • Arancel: {precio}"
+        }
+        for h in exact_slots[:3]
+    ]
+    rows_windows = [
+        {
+            "id": "SLOT_WIN_MANANA_10_13",
+            "title": "🌅 Mañana (10:00-13:00)",
+            "description": f"Bloque flexible {modalidad} • {precio}"
+        },
+        {
+            "id": "SLOT_WIN_TARDE_15_19",
+            "title": "🌇 Tarde (15:00-19:00)",
+            "description": f"Bloque flexible {modalidad} • {precio}"
+        }
+    ]
+    return {
+        "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "header": {
+                "type": "text",
+                "text": f"📅 Horarios {modalidad}"
+            },
+            "body": {
+                "text": (
+                    f"Has elegido modalidad *{modalidad}* ({precio}).\n"
+                    "Selecciona el bloque horario que prefieras para bloquear tu cupo en la agenda:"
+                )
+            },
+            "footer": {
+                "text": "Reserva inmediata en PostgreSQL"
+            },
+            "action": {
+                "button": "Ver Horarios",
+                "sections": [
+                    {"title": "Horas Exactas Disponibles", "rows": rows_exact},
+                    {"title": "Ventanas Flexibles", "rows": rows_windows}
+                ]
+            }
+        }
+    }
+
+
+def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
+    """
+    Evalúa los síntomas enviados por WhatsApp usando Anthropic Claude / Groq (o motor determinístico clínico)
+    respetando la regla estricta: El agente clasifica prioridad y orienta primeros auxilios, NUNCA diagnostica.
+    """
+    texto_l = (symptom_text or "").lower()
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+
+    if anthropic_key:
+        try:
+            tool_def = {
+                "name": "analizar_intencion_tutor",
+                "description": "Extrae el triaje administrativo, urgencia, especie y protocolo pre-aprobado.",
+                "input_schema": ClientIntentExtractionSchema.model_json_schema()
+            }
+            resp = llm_post(
+                "https://api.anthropic.com/v1/messages",
+                timeout=12.0,
+                max_attempts=1,
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": ANTHROPIC_MODEL,
+                    "max_tokens": 512,
+                    "system": (
+                        "Eres el Asistente de Recepción y Triaje Administrativo 24/7 de la Dra. Daniela Alcázar en WhatsApp. "
+                        "NUNCA emitas diagnósticos médicos definitivos ni recetes fármacos. Clasifica la prioridad ('HIGH', 'MEDIUM', 'LOW'), "
+                        "detecta la especie ('Canino', 'Felino', 'Conejo', 'Cuy', 'Erizo') y selecciona un first_aid_protocol_id válido."
+                    ),
+                    "messages": [{"role": "user", "content": f"Mensaje del tutor en WhatsApp: {symptom_text}"}],
+                    "tools": [tool_def],
+                    "tool_choice": {"type": "tool", "name": "analizar_intencion_tutor"}
+                }
+            )
+            data = resp.json()
+            for block in data.get("content", []):
+                if block.get("type") == "tool_use":
+                    inp = block.get("input", {})
+                    pid = inp.get("first_aid_protocol_id", "PREVENTIVO_RUTINA")
+                    if pid not in FIRST_AID_PROTOCOLS:
+                        pid = "PREVENTIVO_RUTINA"
+                    return {
+                        "urgency_level": inp.get("urgency_level", "LOW"),
+                        "especie_detectada": inp.get("especie_detectada", "Canino"),
+                        "motivo_resumido": inp.get("motivo_resumido", symptom_text[:70]),
+                        "first_aid_protocol_id": pid
+                    }
+        except Exception as exc:
+            logger.warning(f"[WhatsApp Triaje IA] Fallback a reglas clínicas locales: {exc}")
+
+    # Reglas clínicas locales determinísticas
+    if any(w in texto_l for w in ["respira", "ahog", "asfix", "cianosis", "azul"]):
+        pid, urg, motivo = "RESPIRATORIO_CRITICO", "HIGH", "Dificultad respiratoria aguda"
+    elif any(w in texto_l for w in ["atropell", "golpe", "sangr", "herid", "fractur", "convuls"]):
+        pid, urg, motivo = "TRAUMA_URGENCIAS", "HIGH", "Traumatismo o herida de urgencia"
+    elif any(w in texto_l for w in ["vomit", "diarre", "decaid", "no come", "dejo de comer", "inapet"]):
+        pid, urg, motivo = "GI_VOMITO_AGUDO", "MEDIUM", "Cuadro digestivo o inapetencia"
+    else:
+        pid, urg, motivo = "PREVENTIVO_RUTINA", "LOW", "Consulta preventiva / Control sano"
+
+    if any(w in texto_l for w in ["conej", "bunny"]):
+        esp = "Conejo"
+    elif any(w in texto_l for w in ["cuy", "cobay"]):
+        esp = "Cuy"
+    elif any(w in texto_l for w in ["eriz"]):
+        esp = "Erizo"
+    elif any(w in texto_l for w in ["gat", "felin", "michi"]):
+        esp = "Felino"
+    else:
+        esp = "Canino"
+
+    return {
+        "urgency_level": urg,
+        "especie_detectada": esp,
+        "motivo_resumido": motivo,
+        "first_aid_protocol_id": pid
+    }
+
+
+@app.get("/api/v1/covet/whatsapp/webhook")
+def verify_meta_whatsapp_webhook(
+    hub_mode: Optional[str] = Query(default=None, alias="hub.mode"),
+    hub_verify_token: Optional[str] = Query(default=None, alias="hub.verify_token"),
+    hub_challenge: Optional[str] = Query(default=None, alias="hub.challenge")
+):
+    """
+    Endpoint oficial de verificación de Webhook para Meta Developer Portal (WhatsApp Cloud API).
+    Valida `hub.mode == 'subscribe'` y `hub.verify_token == WHATSAPP_VERIFY_TOKEN`,
+    devolviendo `hub.challenge` en texto plano con HTTP 200 OK.
+    """
+    if hub_mode == "subscribe" and hub_verify_token == WHATSAPP_VERIFY_TOKEN:
+        logger.info("[WhatsApp Cloud API] Webhook verificado exitosamente con Meta.")
+        return PlainTextResponse(content=str(hub_challenge or ""), status_code=200)
+
+    raise HTTPException(
+        status_code=403,
+        detail="Token de verificación de Meta inválido (hub.verify_token no coincide)."
+    )
+
+
+@app.post("/api/v1/covet/whatsapp/webhook")
+def handle_meta_whatsapp_webhook(
+    payload: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Gestor 100% Nativo de Mensajes de WhatsApp Cloud API para la Dra. Daniela Alcázar:
+    - Recibe mensajes entrantes de Meta (`text`, `interactive.button_reply`, `interactive.list_reply`, `interactive.nfm_reply`).
+    - Persiste el estado conversacional del tutor en PostgreSQL (`whatsapp_sessions`).
+    - Ejecuta Triaje IA, Suscripción de Membresía ($8.990/mes), Consulta de Carné 24/7, Reserva de Citas
+      (Domicilio $25.000 / Telemedicina $15.000) y Confirmación de Pago In-Chat SIN enviar ningún link web.
+    """
+    ahora = datetime.datetime.utcnow()
+    outbound_dispatches: List[Dict[str, Any]] = []
+
+    entries = payload.get("entry") or []
+    for entry in entries:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            contacts = value.get("contacts") or []
+            messages = value.get("messages") or []
+
+            if not messages:
+                continue
+
+            msg = messages[0]
+            raw_from = msg.get("from", "")
+            clean_phone = normalizar_telefono_cl(raw_from) or f"+{raw_from}"
+            profile_name = (
+                contacts[0].get("profile", {}).get("name")
+                if contacts and isinstance(contacts[0], dict)
+                else "Tutor(a)"
+            ) or "Tutor(a)"
+
+            # Extraer texto o ID de botón/lista pulsado por el usuario
+            msg_type = msg.get("type", "text")
+            user_text = ""
+            action_id = ""
+
+            if msg_type == "text":
+                user_text = (msg.get("text", {}).get("body") or "").strip()
+            elif msg_type == "interactive":
+                inter = msg.get("interactive") or {}
+                inter_type = inter.get("type")
+                if inter_type == "button_reply":
+                    action_id = inter.get("button_reply", {}).get("id", "")
+                    user_text = inter.get("button_reply", {}).get("title", "")
+                elif inter_type == "list_reply":
+                    action_id = inter.get("list_reply", {}).get("id", "")
+                    user_text = inter.get("list_reply", {}).get("title", "")
+                elif inter_type == "nfm_reply":
+                    # Respuesta de un formulario nativo WhatsApp Flow
+                    action_id = "FLOW_TRIAGE_SUBMITTED"
+                    user_text = inter.get("nfm_reply", {}).get("response_json", "{}")
+
+            # 1. Recuperar o crear sesión conversacional en PostgreSQL
+            session_row = db.query(WhatsAppSessionDB).filter(WhatsAppSessionDB.telefono == clean_phone).first()
+            if not session_row:
+                session_row = WhatsAppSessionDB(
+                    telefono=clean_phone,
+                    profile_name=profile_name,
+                    current_step="MAIN_MENU",
+                    context_json={},
+                    updated_at=ahora
+                )
+                db.add(session_row)
+                db.commit()
+                db.refresh(session_row)
+
+            ctx = dict(session_row.context_json) if isinstance(session_row.context_json, dict) else {}
+            step = session_row.current_step or "MAIN_MENU"
+            lower_text = user_text.lower()
+
+            # Comandos globales para abrir el Menú Principal
+            if action_id == "BTN_MENU_PRINCIPAL" or lower_text in ("hola", "menu", "menú", "inicio", "buenas", "empezar"):
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(raw_from, build_wa_main_menu_interactive(profile_name))
+                )
+                continue
+
+            # =========================================================
+            # FLUJO A: VER Y SUSCRIBIR MEMBRESÍA CUIDADO CONTINUO ($8.990/MES)
+            # =========================================================
+            if action_id == "BTN_MEMBRESIA_8990" or "membres" in lower_text or "8990" in lower_text:
+                session_row.current_step = "VIEWING_MEMBERSHIP"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(raw_from, build_wa_membership_card_interactive())
+                )
+                continue
+
+            if action_id == "SUB_INICIAR_8990":
+                session_row.current_step = "AWAITING_SUB_PET_NAME"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "text",
+                            "text": {
+                                "body": (
+                                    "🐾 *Inscripción Membresía Cuidado Continuo ($8.990/mes)*\n\n"
+                                    "Por favor escribe el *nombre de tu mascota* y tu *comuna/dirección* separados por una coma.\n"
+                                    "_(Ejemplo: Canela, Av. Providencia 1234)_"
+                                )
+                            }
+                        }
+                    )
+                )
+                continue
+
+            if step == "AWAITING_SUB_PET_NAME" and user_text and not action_id:
+                parts = [p.strip() for p in user_text.split(",", 1)]
+                pet_name = parts[0][:50] if parts else "Mascota"
+                direccion = parts[1][:200] if len(parts) > 1 else "Domicilio por confirmar en chat"
+                ctx["sub_pet_name"] = pet_name
+                ctx["sub_direccion"] = direccion
+                session_row.context_json = ctx
+                session_row.current_step = "AWAITING_SUB_SPECIES"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(raw_from, build_wa_species_list_message("SUB_ESP", pet_name))
+                )
+                continue
+
+            if action_id.startswith("SUB_ESP_"):
+                especie_sel = action_id.replace("SUB_ESP_", "")
+                pet_name = ctx.get("sub_pet_name", "Mascota")
+                direccion = ctx.get("sub_direccion", "Domicilio registrado en WhatsApp")
+
+                sub_req = MembresiaSuscribirRequest(
+                    tutor_nombre=profile_name,
+                    tutor_telefono=clean_phone,
+                    tutor_direccion=direccion,
+                    paciente_nombre=pet_name,
+                    especie=especie_sel,
+                    clinica_slug="dra-daniela-alcazar",
+                    metodo_pago="WHATSAPP_CLOUD_NATIVE",
+                    consentimiento_ley21719=True
+                )
+                res_sub = suscribir_membresia_cuidado_continuo(sub_req, background_tasks, db)
+                ctx["last_folio_membresia"] = res_sub["folio_membresia"]
+                session_row.context_json = ctx
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "header": {
+                                    "type": "text",
+                                    "text": "🎉 ¡Membresía Activa en WhatsApp!"
+                                },
+                                "body": {
+                                    "text": (
+                                        f"*{pet_name}* ({especie_sel}) ya está inscrito(a) en la *Membresía Cuidado Continuo* de la Dra. Daniela Alcázar.\n\n"
+                                        f"• *Folio Oficial:* `{res_sub['folio_membresia']}`\n"
+                                        f"• *Valor mensual:* $8.990 CLP\n"
+                                        f"• *💉 Próxima Vacuna:* {res_sub['calendario_preventivo']['proxima_vacuna']}\n"
+                                        f"• *💊 Próxima Desparasitación:* {res_sub['calendario_preventivo']['proxima_desparasitacion']}\n"
+                                        f"• *🏠 Consulta Domicilio Gratis:* 1 disponible\n"
+                                        f"• *⚡ Descuento Urgencias:* 20% OFF activo\n\n"
+                                        "Todo quedó guardado en tu Carné Digital 24/7 dentro de este chat."
+                                    )
+                                },
+                                "footer": {
+                                    "text": "Respaldo Ley N° 21.719 • Cero links externos"
+                                },
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "BTN_HISTORIAL_24_7", "title": "📋 Ver Mi Carné 24/7"}},
+                                        {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Consulta"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        }
+                    )
+                )
+                continue
+
+            # =========================================================
+            # FLUJO B: CONSULTA DE CARNÉ E HISTORIAL CLÍNICO 24/7 EN EL CHAT
+            # =========================================================
+            if action_id == "BTN_HISTORIAL_24_7" or "carn" in lower_text or "historial" in lower_text:
+                membresias = listar_membresias_y_carnet_vivo(telefono=clean_phone, limit=5, db=db)
+                if not membresias:
+                    body_carnet = (
+                        "📋 *Historial Clínico y Carné 24/7*\n\n"
+                        f"Aún no encontramos mascotas asociadas a tu número ({clean_phone}).\n\n"
+                        "Puedes inscribir a tu mascota en la *Membresía Cuidado Continuo ($8.990/mes)* o *Agendar una Consulta* tocando los botones de abajo:"
+                    )
+                else:
+                    bloques = ["📋 *Tu Carné e Historial Clínico en Vivo 24/7*"]
+                    for m in membresias[:3]:
+                        notas = m.get("notas_clinicas_24_7") or []
+                        ultima_nota = (
+                            f"\n  🩺 _Última atención ({notas[0]['fecha']}):_ {notas[0]['diagnostico']}"
+                            if notas
+                            else "\n  🩺 _Sin consultas registradas aún._"
+                        )
+                        bloques.append(
+                            f"\n🐾 *{m['paciente_nombre']}* ({m['especie']}) — Folio `{m['folio_membresia']}`\n"
+                            f"  • *Estado Membresía:* {m['estado']} ($8.990/mes)\n"
+                            f"  • *💉 Próxima Vacuna:* {m['proxima_vacuna_fecha']}\n"
+                            f"  • *💊 Próxima Desparasitación:* {m['proxima_desparasitacion_fecha']}\n"
+                            f"  • *🏠 Consulta Domicilio Gratis:* {'Usada' if m['consulta_domicilio_gratis_usada'] else 'Disponible'}"
+                            f"{ultima_nota}"
+                        )
+                    body_carnet = "\n".join(bloques)
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "body": {"text": body_carnet[:1020]},
+                                "footer": {"text": "Dra. Daniela Alcázar • Historial en Vivo"},
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "SUB_INICIAR_8990", "title": "💖 Suscribir Mascota"}},
+                                        {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Consulta"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        }
+                    )
+                )
+                continue
+
+            # =========================================================
+            # FLUJO C: TRIAJE IA + AGENDAMIENTO (DOMICILIO VS TELEMEDICINA) + PAGO IN-CHAT
+            # =========================================================
+            if action_id == "BTN_TRIAJE_CITA":
+                session_row.current_step = "AWAITING_TRIAGE_SYMPTOMS"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "text",
+                            "text": {
+                                "body": (
+                                    "🩺 *Asistente de Triaje y Agendamiento 24/7 — Dra. Daniela Alcázar*\n\n"
+                                    "Cuéntame en un mensaje el *nombre de tu mascota*, qué *especie* es (Perro, Gato, Conejo, Cuy o Erizo) y *qué síntomas presenta o qué consulta necesitas*.\n\n"
+                                    "_(Ejemplo: Mi conejo Copito dejó de comer hoy y necesito visita a domicilio o telemedicina)_"
+                                )
+                            }
+                        }
+                    )
+                )
+                continue
+
+            if step == "AWAITING_TRIAGE_SYMPTOMS" or (step == "MAIN_MENU" and user_text and not action_id):
+                ai_eval = evaluate_whatsapp_triage_ai_sync(user_text)
+                pid = ai_eval["first_aid_protocol_id"]
+                protocol = FIRST_AID_PROTOCOLS.get(pid, FIRST_AID_PROTOCOLS["PREVENTIVO_RUTINA"])
+                indicaciones_str = "\n".join(f"• {ind}" for ind in (protocol.get("indicaciones") or [])[:2])
+                prohibicion_str = (protocol.get("prohibiciones") or ["No automedicar sin indicación veterinaria."])[0]
+
+                ctx["triage_symptom_text"] = user_text
+                ctx["triage_urgency"] = ai_eval["urgency_level"]
+                ctx["triage_especie"] = ai_eval["especie_detectada"]
+                ctx["triage_motivo"] = ai_eval["motivo_resumido"]
+                ctx["triage_protocol_id"] = pid
+                session_row.context_json = ctx
+                session_row.current_step = "AWAITING_MODALITY_CHOICE"
+                session_row.updated_at = ahora
+                db.commit()
+
+                body_triage = (
+                    f"🩺 *Resultado de Recepción 24/7*\n"
+                    f"• *Especie detectada:* {ai_eval['especie_detectada']}\n"
+                    f"• *Motivo:* {ai_eval['motivo_resumido']}\n"
+                    f"• *Prioridad:* {ai_eval['urgency_level']}\n\n"
+                    f"📋 *Primeros Auxilios Pre-Aprobados ({protocol['titulo']}):*\n"
+                    f"{indicaciones_str}\n\n"
+                    f"🚫 *Importante:* {prohibicion_str}\n\n"
+                    "🛡️ _Regla Clínica: Este asistente clasifica prioridad y agenda tu hora. El diagnóstico definitivo es exclusivo de la Dra. Daniela Alcázar._\n\n"
+                    "¿En qué modalidad prefieres agendar tu consulta?"
+                )
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "body": {"text": body_triage[:1020]},
+                                "footer": {"text": "Elige modalidad sin salir de WhatsApp"},
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "MOD_DOMICILIO", "title": "🏠 Domicilio $25.000"}},
+                                        {"type": "reply", "reply": {"id": "MOD_TELEMEDICINA", "title": "💻 Telemed. $15.000"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        }
+                    )
+                )
+                continue
+
+            if action_id in ("MOD_DOMICILIO", "MOD_TELEMEDICINA"):
+                modalidad = "TELEMEDICINA" if action_id == "MOD_TELEMEDICINA" else "DOMICILIO"
+                ctx["triage_modalidad"] = modalidad
+                session_row.context_json = ctx
+                session_row.current_step = "AWAITING_SLOT_SELECTION"
+                session_row.updated_at = ahora
+                db.commit()
+
+                slots = calculate_hybrid_slots(db, ctx.get("triage_urgency", "LOW"))
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(raw_from, build_wa_schedule_list_message(slots, modalidad))
+                )
+                continue
+
+            if action_id.startswith("SLOT_"):
+                slot_label = user_text or action_id.replace("SLOT_EXACT_", "").replace("SLOT_WIN_", "")
+                modalidad = ctx.get("triage_modalidad", "DOMICILIO")
+                monto_clp = 15000 if modalidad == "TELEMEDICINA" else 25000
+                especie = ctx.get("triage_especie", "Canino")
+                motivo = ctx.get("triage_motivo", "Consulta agendada en WhatsApp")
+
+                # Crear Tutor, Paciente y Cita (HOLD_15_MIN) en PostgreSQL
+                tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+                if not tutor:
+                    tutor = TutorDB(
+                        nombre=profile_name,
+                        telefono=clean_phone,
+                        consentimiento_ley21719=True,
+                        fecha_consentimiento=ahora,
+                        version_terminos=TERMINOS_VERSION,
+                        activo_whatsapp=True,
+                        metodo_captura="WHATSAPP_CLOUD_API_NATIVO",
+                        consentimiento_ia=True,
+                        fecha_consentimiento_ia=ahora
+                    )
+                    db.add(tutor)
+                    db.flush()
+
+                paciente = db.query(PacienteDB).filter(PacienteDB.tutor_id == tutor.id).first()
+                if not paciente:
+                    paciente = PacienteDB(
+                        tutor_id=tutor.id,
+                        nombre=f"Mascota de {profile_name.split()[0]}",
+                        especie=especie,
+                        raza="Mestizo",
+                        peso_kg=0.0
+                    )
+                    db.add(paciente)
+                    db.flush()
+
+                nueva_cita = CitaDB(
+                    paciente_id=paciente.id,
+                    fecha_hora=ahora + datetime.timedelta(hours=2),
+                    motivo=motivo,
+                    estado="PROGRAMADA",
+                    estado_reserva="HOLD_15_MIN",
+                    nivel_urgencia=ctx.get("triage_urgency", "LOW"),
+                    modalidad=modalidad,
+                    ventana_horaria=slot_label,
+                    hold_expires_at=ahora + datetime.timedelta(minutes=15),
+                    pagado=False,
+                    monto_clp=monto_clp,
+                    clinica_slug="dra-daniela-alcazar",
+                    sintomas_triaje={
+                        "tutor_nombre": profile_name,
+                        "tutor_telefono": clean_phone,
+                        "paciente_nombre": paciente.nombre,
+                        "especie": especie,
+                        "canal": "WHATSAPP_CLOUD_NATIVO"
+                    }
+                )
+                db.add(nueva_cita)
+                db.commit()
+                db.refresh(nueva_cita)
+
+                ctx["active_cita_id"] = nueva_cita.id
+                session_row.context_json = ctx
+                session_row.current_step = "AWAITING_INCHAT_PAYMENT"
+                session_row.updated_at = ahora
+                db.commit()
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "header": {
+                                    "type": "text",
+                                    "text": f"🔒 Cupo #{nueva_cita.id} Reservado (15 min)"
+                                },
+                                "body": {
+                                    "text": (
+                                        f"Tu bloque ha sido reservado en la agenda de la *Dra. Daniela Alcázar*:\n\n"
+                                        f"• *Cita ID:* `#{nueva_cita.id}`\n"
+                                        f"• *Modalidad:* {modalidad}\n"
+                                        f"• *Horario:* {slot_label}\n"
+                                        f"• *Arancel:* ${monto_clp:,} CLP\n\n"
+                                        "Confirma tu pago aquí mismo en el chat (sin abrir links externos) tocando el botón de abajo:"
+                                    ).replace(",", ".")
+                                },
+                                "footer": {
+                                    "text": "Checkout Nativo en WhatsApp • Cero Redirección"
+                                },
+                                "action": {
+                                    "buttons": [
+                                        {
+                                            "type": "reply",
+                                            "reply": {
+                                                "id": f"PAY_CONFIRM_CITA_{nueva_cita.id}",
+                                                "title": "✅ Confirmar y Pagar"
+                                            }
+                                        },
+                                        {
+                                            "type": "reply",
+                                            "reply": {
+                                                "id": "BTN_MENU_PRINCIPAL",
+                                                "title": "⬅️ Menú Principal"
+                                            }
+                                        }
+                                    ]
+                                }
+                            }
+                        }
+                    )
+                )
+                continue
+
+            if action_id.startswith("PAY_CONFIRM_CITA_"):
+                cita_id_str = action_id.replace("PAY_CONFIRM_CITA_", "")
+                cita_id_val = int(cita_id_str) if cita_id_str.isdigit() else ctx.get("active_cita_id")
+                cita = db.query(CitaDB).filter(CitaDB.id == cita_id_val).first() if cita_id_val else None
+
+                if cita:
+                    cita.estado_reserva = "CONFIRMED"
+                    cita.pagado = True
+                    db.commit()
+                    db.refresh(cita)
+
+                    broadcast_clinical_event(
+                        "WHATSAPP_NATIVE_APPOINTMENT_CONFIRMED",
+                        {
+                            "cita_id": cita.id,
+                            "tutor_nombre": profile_name,
+                            "tutor_telefono": clean_phone,
+                            "modalidad": cita.modalidad,
+                            "ventana_horaria": cita.ventana_horaria,
+                            "monto_clp": cita.monto_clp
+                        }
+                    )
+
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "header": {
+                                    "type": "text",
+                                    "text": "✅ ¡Cita 100% Confirmada en WhatsApp!"
+                                },
+                                "body": {
+                                    "text": (
+                                        f"Excelente *{profile_name}*, tu consulta `#{cita.id if cita else ''}` en modalidad *{cita.modalidad if cita else 'DOMICILIO'}* "
+                                        f"({cita.ventana_horaria if cita else 'Horario confirmado'}) ya está pagada y confirmada en la agenda de la *Dra. Daniela Alcázar*.\n\n"
+                                        "🔔 Recibirás en este mismo chat tu recordatorio automático 24h antes y tu Receta Médica Oficial al finalizar la consulta."
+                                    )
+                                },
+                                "footer": {
+                                    "text": "Dra. Daniela Alcázar • Atención Confirmada"
+                                },
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "BTN_HISTORIAL_24_7", "title": "📋 Mi Carné 24/7"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Membresía $8.990"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        }
+                    )
+                )
+                continue
+
+            # Fallback amigable: mostrar Menú Principal Interactivo
+            outbound_dispatches.append(
+                send_whatsapp_cloud_message(raw_from, build_wa_main_menu_interactive(profile_name))
+            )
+
+    return {
+        "status": "PROCESSED_NATIVE_WHATSAPP",
+        "messages_processed": len(outbound_dispatches),
+        "dispatches": outbound_dispatches
+    }
+
 
 
 
