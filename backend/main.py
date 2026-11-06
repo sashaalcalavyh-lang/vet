@@ -4651,7 +4651,8 @@ def enviar_recordatorio_24h_anti_inasistencia(
         f"✅ Responde *CONFIRMO* a este mensaje para asegurar tu hora o avísanos si necesitas reprogramar.\n"
         f"🔒 _Servicio de confirmación automatizada 24/7._"
     )
-    wa_url = f"https://wa.me/{wa_digits}?text={ urllib.parse.quote(wa_msg) }"
+    import urllib.parse
+    wa_url = f"https://wa.me/{wa_digits}?text={urllib.parse.quote(wa_msg)}"
 
     background_tasks.add_task(
         trigger_n8n_triage_alert,
