@@ -4713,7 +4713,7 @@ def enviar_recordatorio_24h_anti_inasistencia(
 
 # =============================================================
 # 16. EXPERIENCIA 100% NATIVA EN WHATSAPP CLOUD API OFICIAL DE META
-# Perfil: Dra. Daniela Alcázar (Cero Links Web — Todo dentro del Chat)
+# Arquitectura Multi-Veterinario (Multi-Tenant por phone_number_id + Sandbox /modo)
 # =============================================================
 
 WHATSAPP_VERIFY_TOKEN = os.getenv("WHATSAPP_VERIFY_TOKEN", "covet_daniela_verify_2026")
@@ -4722,15 +4722,139 @@ WHATSAPP_PHONE_NUMBER_ID = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "")
 WHATSAPP_GRAPH_VERSION = os.getenv("WHATSAPP_GRAPH_VERSION", "v21.0")
 WHATSAPP_FLOW_ID_TRIAGE = os.getenv("WHATSAPP_FLOW_ID_TRIAGE", "")
 
+# Directorio Multi-Tenant en memoria (configurable en caliente vía API o variables de entorno)
+WHATSAPP_VET_TENANTS: Dict[str, Dict[str, Any]] = {
+    "dra-daniela-alcazar": {
+        "clinica_slug": "dra-daniela-alcazar",
+        "phone_number_id": os.getenv("WA_PHONE_ID_DANIELA", ""),
+        "access_token": os.getenv("WA_TOKEN_DANIELA", ""),
+        "nombre_doctora": "Dra. Daniela Alcázar",
+        "header_menu": "🐾 Dra. Daniela Alcázar — Atención 24/7",
+        "subtitulo_servicio": "Atención Veterinaria a Domicilio y Telemedicina",
+        "leyenda_especies": "🐶🐱🐰🐹🦔 _Atención de Caninos, Felinos, Conejos, Cuy y Erizos._",
+        "especies_habilitadas": ["Canino", "Felino", "Conejo", "Cuy", "Erizo"],
+        "incluye_exoticos": True,
+        "comunas_cobertura": "Providencia, Las Condes, Ñuñoa, Vitacura y Santiago Centro",
+        "precio_domicilio_clp": 25000,
+        "precio_telemedicina_clp": 15000,
+        "membresia_activa": True,
+        "precio_membresia_clp": 8990,
+        "datos_transferencia": {
+            "titular": "Dra. Daniela Alcázar",
+            "rut": os.getenv("DANIELA_BANK_RUT", "RUT Profesional (Solicitar en chat)"),
+            "banco": os.getenv("DANIELA_BANK_NAME", "Banco de Chile / BancoEstado"),
+            "tipo_cuenta": os.getenv("DANIELA_BANK_TYPE", "Cuenta Vista / Corriente"),
+            "numero_cuenta": os.getenv("DANIELA_BANK_ACCOUNT", "Confirmar al transferir"),
+            "email": os.getenv("DANIELA_BANK_EMAIL", "daniela@alcazarvet.cl")
+        }
+    },
+    "vet-piloto-2": {
+        "clinica_slug": "vet-piloto-2",
+        "phone_number_id": os.getenv("WA_PHONE_ID_VET2", ""),
+        "access_token": os.getenv("WA_TOKEN_VET2", ""),
+        "nombre_doctora": os.getenv("VET2_DISPLAY_NAME", "Dra. Piloto 2 — Medicina Canina y Felina"),
+        "header_menu": "🐶🐱 Clínica Veterinaria — Atención 24/7",
+        "subtitulo_servicio": "Consultas a Domicilio y Telemedicina para Perros y Gatos",
+        "leyenda_especies": "🐶🐱 _Atención exclusiva de Caninos y Felinos._",
+        "especies_habilitadas": ["Canino", "Felino"],
+        "incluye_exoticos": False,
+        "comunas_cobertura": "La Florida, Macul, Peñalolén, Ñuñoa y Puente Alto",
+        "precio_domicilio_clp": 22000,
+        "precio_telemedicina_clp": 12000,
+        "membresia_activa": True,
+        "precio_membresia_clp": 7990,
+        "datos_transferencia": {
+            "titular": os.getenv("VET2_DISPLAY_NAME", "Dra. Piloto 2"),
+            "rut": os.getenv("VET2_BANK_RUT", "RUT Profesional (Solicitar en chat)"),
+            "banco": os.getenv("VET2_BANK_NAME", "Banco Santander / BancoEstado"),
+            "tipo_cuenta": os.getenv("VET2_BANK_TYPE", "Cuenta Corriente / RUT"),
+            "numero_cuenta": os.getenv("VET2_BANK_ACCOUNT", "Confirmar al transferir"),
+            "email": os.getenv("VET2_BANK_EMAIL", "pagos@vetpiloto2.cl")
+        }
+    }
+}
 
-def send_whatsapp_cloud_message(recipient_phone: str, message_payload: Dict[str, Any]) -> Dict[str, Any]:
+
+class WhatsAppTenantConfigRequest(BaseModel):
+    clinica_slug: str = Field(..., example="vet-piloto-2")
+    phone_number_id: Optional[str] = Field(default=None, example="109283746512345")
+    access_token: Optional[str] = Field(default=None)
+    nombre_doctora: Optional[str] = Field(default=None, example="Dra. Valentina Soto")
+    header_menu: Optional[str] = Field(default=None, example="🐾 Dra. Valentina Soto — Atención 24/7")
+    subtitulo_servicio: Optional[str] = Field(default=None, example="Atención Veterinaria Canina y Felina")
+    incluye_exoticos: Optional[bool] = Field(default=None)
+    comunas_cobertura: Optional[str] = Field(default=None)
+    precio_domicilio_clp: Optional[int] = Field(default=None, example=22000)
+    precio_telemedicina_clp: Optional[int] = Field(default=None, example=12000)
+    precio_membresia_clp: Optional[int] = Field(default=None, example=7990)
+    banco_titular: Optional[str] = Field(default=None)
+    banco_rut: Optional[str] = Field(default=None)
+    banco_nombre: Optional[str] = Field(default=None)
+    banco_tipo_cuenta: Optional[str] = Field(default=None)
+    banco_numero_cuenta: Optional[str] = Field(default=None)
+    banco_email: Optional[str] = Field(default=None)
+
+
+def resolve_whatsapp_vet_tenant(
+    incoming_phone_number_id: Optional[str],
+    session_ctx: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Resuelve qué perfil de veterinaria debe responder:
+    1. Si el desarrollador activó un override en su sesión de prueba (`/modo daniela` o `/modo vet2`), usa ese perfil.
+    2. Si el `phone_number_id` entrante de Meta coincide con el número registrado de una doctora, usa el perfil de esa doctora.
+    3. Por defecto, usa el perfil principal de la Dra. Daniela Alcázar (`dra-daniela-alcazar`).
+    """
+    if session_ctx and session_ctx.get("dev_tenant_override") in WHATSAPP_VET_TENANTS:
+        return WHATSAPP_VET_TENANTS[session_ctx["dev_tenant_override"]]
+
+    clean_pid = (incoming_phone_number_id or "").strip()
+    if clean_pid:
+        for slug, cfg in WHATSAPP_VET_TENANTS.items():
+            if cfg.get("phone_number_id") and cfg["phone_number_id"] == clean_pid:
+                return cfg
+
+    return WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+
+
+def format_clp(amount: int) -> str:
+    """Formatea un entero CLP con separador de miles chileno (ej. $25.000)."""
+    return f"${amount:,}".replace(",", ".")
+
+
+def format_bank_transfer_block(tenant_cfg: Dict[str, Any]) -> str:
+    """Devuelve el bloque de texto con los datos de transferencia bancaria propios de la veterinaria activa."""
+    bank = tenant_cfg.get("datos_transferencia") or {}
+    return (
+        f"🏦 *Datos de Transferencia Directa ({tenant_cfg['nombre_doctora']}):*\n"
+        f"• *Titular:* {bank.get('titular', tenant_cfg['nombre_doctora'])}\n"
+        f"• *RUT:* {bank.get('rut', 'Por confirmar')}\n"
+        f"• *Banco:* {bank.get('banco', 'Banco')}\n"
+        f"• *Tipo / N° Cuenta:* {bank.get('tipo_cuenta', 'Cuenta')} — `{bank.get('numero_cuenta', 'Por confirmar')}`\n"
+        f"• *Correo:* {bank.get('email', '')}"
+    )
+
+
+def send_whatsapp_cloud_message(
+    recipient_phone: str,
+    message_payload: Dict[str, Any],
+    tenant_cfg: Optional[Dict[str, Any]] = None,
+    incoming_phone_number_id: Optional[str] = None
+) -> Dict[str, Any]:
     """
     Envía un mensaje interactivo o de texto a través del endpoint oficial `/messages`
-    de WhatsApp Cloud API (Meta Graph API).
-    Si aún no se han configurado WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID en el .env,
-    registra el payload listo para despacho y lo devuelve para inspección/pruebas.
+    de WhatsApp Cloud API (Meta Graph API) usando el `phone_number_id` y token de la veterinaria correspondiente.
     """
     clean_to = "".join(ch for ch in str(recipient_phone) if ch.isdigit())
+    active_tenant = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+
+    effective_phone_id = (
+        active_tenant.get("phone_number_id")
+        or incoming_phone_number_id
+        or WHATSAPP_PHONE_NUMBER_ID
+    )
+    effective_token = active_tenant.get("access_token") or WHATSAPP_ACCESS_TOKEN
+
     body = {
         "messaging_product": "whatsapp",
         "recipient_type": "individual",
@@ -4738,13 +4862,21 @@ def send_whatsapp_cloud_message(recipient_phone: str, message_payload: Dict[str,
         **message_payload
     }
 
-    if not WHATSAPP_ACCESS_TOKEN or not WHATSAPP_PHONE_NUMBER_ID:
-        logger.info(f"[WhatsApp Cloud API Sandbox] Mensaje preparado para {clean_to}: {body.get('type')}")
-        return {"dispatched_to_meta": False, "mode": "SANDBOX_READY", "payload": body}
+    if not effective_token or not effective_phone_id:
+        logger.info(
+            f"[WhatsApp Cloud API Sandbox • {active_tenant['clinica_slug']}] Mensaje preparado para {clean_to}: {body.get('type')}"
+        )
+        return {
+            "dispatched_to_meta": False,
+            "mode": "SANDBOX_READY",
+            "clinica_slug": active_tenant["clinica_slug"],
+            "nombre_doctora": active_tenant["nombre_doctora"],
+            "payload": body
+        }
 
-    url = f"https://graph.facebook.com/{WHATSAPP_GRAPH_VERSION}/{WHATSAPP_PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/{WHATSAPP_GRAPH_VERSION}/{effective_phone_id}/messages"
     headers = {
-        "Authorization": f"Bearer {WHATSAPP_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {effective_token}",
         "Content-Type": "application/json"
     }
     try:
@@ -4753,32 +4885,44 @@ def send_whatsapp_cloud_message(recipient_phone: str, message_payload: Dict[str,
             return {
                 "dispatched_to_meta": resp.status_code in (200, 201),
                 "status_code": resp.status_code,
+                "clinica_slug": active_tenant["clinica_slug"],
                 "meta_response": resp.json() if resp.content else {},
                 "payload": body
             }
     except Exception as exc:
         logger.error(f"[WhatsApp Cloud API] Error enviando mensaje a {clean_to}: {exc}")
-        return {"dispatched_to_meta": False, "error": str(exc), "payload": body}
+        return {
+            "dispatched_to_meta": False,
+            "clinica_slug": active_tenant["clinica_slug"],
+            "error": str(exc),
+            "payload": body
+        }
 
 
-def build_wa_main_menu_interactive(profile_name: str = "Tutor(a)") -> Dict[str, Any]:
+def build_wa_main_menu_interactive(
+    profile_name: str = "Tutor(a)",
+    tenant_cfg: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
-    Mapea la Landing Page de la Dra. Daniela Alcázar (?view=client) a un mensaje
-    Interactive Buttons 100% nativo de WhatsApp Cloud API (0 links externos).
+    Construye el Menú Principal Interactivo de WhatsApp adaptado dinámicamente
+    a la veterinaria activa (Dra. Daniela Alcázar, 2ª Veterinaria Piloto o futuros clientes).
     """
+    t = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+    precio_mem_str = format_clp(t.get("precio_membresia_clp", 8990))
     return {
         "type": "interactive",
         "interactive": {
             "type": "button",
             "header": {
                 "type": "text",
-                "text": "🐾 Dra. Daniela Alcázar — Atención 24/7"
+                "text": t["header_menu"][:60]
             },
             "body": {
                 "text": (
-                    f"¡Hola *{profile_name}*! Bienvenido(a) al canal clínico oficial de la "
-                    "*Dra. Daniela Alcázar — Atención Veterinaria a Domicilio y Telemedicina*.\n\n"
-                    "🐶🐱🐰🐹🦔 _Atención de Caninos, Felinos, Conejos, Cuy y Erizos._\n\n"
+                    f"¡Hola *{profile_name}*! Bienvenido(a) al canal clínico oficial de "
+                    f"*{t['nombre_doctora']} — {t['subtitulo_servicio']}*.\n\n"
+                    f"{t['leyenda_especies']}\n"
+                    f"📍 *Cobertura:* {t.get('comunas_cobertura', 'Santiago')}\n\n"
                     "Toda tu atención, triaje, membresía, carné 24/7 y pago ocurren *100% aquí dentro de WhatsApp* sin abrir páginas externas.\n\n"
                     "Selecciona qué necesitas hoy:"
                 )
@@ -4799,7 +4943,7 @@ def build_wa_main_menu_interactive(profile_name: str = "Tutor(a)") -> Dict[str, 
                         "type": "reply",
                         "reply": {
                             "id": "BTN_MEMBRESIA_8990",
-                            "title": "💖 Membresía $8.990"
+                            "title": f"💖 Plan {precio_mem_str}"[:20]
                         }
                     },
                     {
@@ -4815,22 +4959,23 @@ def build_wa_main_menu_interactive(profile_name: str = "Tutor(a)") -> Dict[str, 
     }
 
 
-def build_wa_membership_card_interactive() -> Dict[str, Any]:
+def build_wa_membership_card_interactive(tenant_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Mapea la Pricing Card 'Membresía Cuidado Continuo ($8.990/mes)' a un mensaje
-    interactivo nativo de WhatsApp con los 5 beneficios exactos y botón CTA directo.
+    Construye la tarjeta interactiva de Membresía adaptada al precio y nombre de la veterinaria activa.
     """
+    t = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+    precio_mem_str = format_clp(t.get("precio_membresia_clp", 8990))
     return {
         "type": "interactive",
         "interactive": {
             "type": "button",
             "header": {
                 "type": "text",
-                "text": "💖 Membresía Cuidado Continuo — $8.990/mes"
+                "text": f"💖 Membresía Cuidado Continuo — {precio_mem_str}/mes"[:60]
             },
             "body": {
                 "text": (
-                    "Protege a tu mascota todo el año con la *Dra. Daniela Alcázar* por solo *$8.990 mensuales* (IVA incl.):\n\n"
+                    f"Protege a tu mascota todo el año con *{t['nombre_doctora']}* por solo *{precio_mem_str} mensuales* (IVA incl.):\n\n"
                     "✅ *Cobertura Anual:* Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de suscripción (o antes si llevan meses acumulados).\n\n"
                     "✅ *1 Consulta a Domicilio Gratis al Año:* Para controles sanos o dudas generales.\n\n"
                     "✅ *Descuento en Consultas Extra:* 20% de descuento en consultas de urgencia o adicionales.\n\n"
@@ -4870,8 +5015,37 @@ def build_wa_membership_card_interactive() -> Dict[str, Any]:
     }
 
 
-def build_wa_species_list_message(prefix_id: str, pet_name: str) -> Dict[str, Any]:
-    """Lista interactiva nativa de WhatsApp (List Message) para seleccionar la especie de la mascota."""
+def build_wa_species_list_message(
+    prefix_id: str,
+    pet_name: str,
+    tenant_cfg: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Lista interactiva nativa de WhatsApp (List Message) para seleccionar la especie de la mascota.
+    Si la veterinaria solo atiende Perros y Gatos (`incluye_exoticos=False`), oculta la sección de exóticos.
+    """
+    t = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+    sections = [
+        {
+            "title": "Mascotas Tradicionales",
+            "rows": [
+                {"id": f"{prefix_id}_Canino", "title": "🐶 Perro (Canino)", "description": "Atención clínica y vacunas caninas"},
+                {"id": f"{prefix_id}_Felino", "title": "🐱 Gato (Felino)", "description": "Manejo Cat-Friendly sin estrés"}
+            ]
+        }
+    ]
+    if t.get("incluye_exoticos", True):
+        sections.append(
+            {
+                "title": "Mascotas Exóticas",
+                "rows": [
+                    {"id": f"{prefix_id}_Conejo", "title": "🐰 Conejo", "description": "Medicina de lagomorfos y control dental"},
+                    {"id": f"{prefix_id}_Cuy", "title": "🐹 Cuy (Cobayo)", "description": "Control nutricional, piel y digestivo"},
+                    {"id": f"{prefix_id}_Erizo", "title": "🦔 Erizo de Tierra", "description": "Control dermatológico y preventivo"}
+                ]
+            }
+        )
+
     return {
         "type": "interactive",
         "interactive": {
@@ -4881,38 +5055,28 @@ def build_wa_species_list_message(prefix_id: str, pet_name: str) -> Dict[str, An
                 "text": f"🐾 Especie de {pet_name[:20]}"
             },
             "body": {
-                "text": f"Selecciona la especie de *{pet_name}* en el menú desplegable para continuar:"
+                "text": f"Selecciona la especie de *{pet_name}* atendida por *{t['nombre_doctora']}*:"
             },
             "footer": {
-                "text": "Dra. Daniela Alcázar • Atención Especializada"
+                "text": f"{t['nombre_doctora'][:40]} • Atención Especializada"
             },
             "action": {
                 "button": "Elegir Especie",
-                "sections": [
-                    {
-                        "title": "Mascotas Tradicionales",
-                        "rows": [
-                            {"id": f"{prefix_id}_Canino", "title": "🐶 Perro (Canino)", "description": "Atención clínica y vacunas caninas"},
-                            {"id": f"{prefix_id}_Felino", "title": "🐱 Gato (Felino)", "description": "Manejo Cat-Friendly sin estrés"}
-                        ]
-                    },
-                    {
-                        "title": "Mascotas Exóticas",
-                        "rows": [
-                            {"id": f"{prefix_id}_Conejo", "title": "🐰 Conejo", "description": "Medicina de lagomorfos y control dental"},
-                            {"id": f"{prefix_id}_Cuy", "title": "🐹 Cuy (Cobayo)", "description": "Control nutricional, piel y digestivo"},
-                            {"id": f"{prefix_id}_Erizo", "title": "🦔 Erizo de Tierra", "description": "Control dermatológico y preventivo"}
-                        ]
-                    }
-                ]
+                "sections": sections
             }
         }
     }
 
 
-def build_wa_schedule_list_message(slots_data: Dict[str, Any], modalidad: str) -> Dict[str, Any]:
-    """Construye un List Message nativo de WhatsApp con los bloques exactos y ventanas flexibles."""
-    precio = "$15.000 CLP" if modalidad == "TELEMEDICINA" else "$25.000 CLP"
+def build_wa_schedule_list_message(
+    slots_data: Dict[str, Any],
+    modalidad: str,
+    tenant_cfg: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """Construye un List Message nativo de WhatsApp con los bloques y aranceles propios de la veterinaria activa."""
+    t = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+    monto = t["precio_telemedicina_clp"] if modalidad == "TELEMEDICINA" else t["precio_domicilio_clp"]
+    precio = f"{format_clp(monto)} CLP"
     exact_slots = slots_data.get("exact_slots") or ["09:00", "11:00", "15:30"]
     rows_exact = [
         {
@@ -4944,7 +5108,7 @@ def build_wa_schedule_list_message(slots_data: Dict[str, Any], modalidad: str) -
             },
             "body": {
                 "text": (
-                    f"Has elegido modalidad *{modalidad}* ({precio}).\n"
+                    f"Has elegido modalidad *{modalidad}* ({precio}) con *{t['nombre_doctora']}*.\n"
                     "Selecciona el bloque horario que prefieras para bloquear tu cupo en la agenda:"
                 )
             },
@@ -4962,11 +5126,16 @@ def build_wa_schedule_list_message(slots_data: Dict[str, Any], modalidad: str) -
     }
 
 
-def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
+def evaluate_whatsapp_triage_ai_sync(
+    symptom_text: str,
+    tenant_cfg: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
     """
     Evalúa los síntomas enviados por WhatsApp usando Anthropic Claude / Groq (o motor determinístico clínico)
-    respetando la regla estricta: El agente clasifica prioridad y orienta primeros auxilios, NUNCA diagnostica.
+    respetando las especies habilitadas de la veterinaria activa y la regla estricta: NUNCA diagnosticar.
     """
+    t = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
+    allowed_species = t.get("especies_habilitadas") or ["Canino", "Felino"]
     texto_l = (symptom_text or "").lower()
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
 
@@ -4990,9 +5159,9 @@ def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
                     "model": ANTHROPIC_MODEL,
                     "max_tokens": 512,
                     "system": (
-                        "Eres el Asistente de Recepción y Triaje Administrativo 24/7 de la Dra. Daniela Alcázar en WhatsApp. "
+                        f"Eres el Asistente de Recepción y Triaje Administrativo 24/7 de {t['nombre_doctora']} en WhatsApp. "
                         "NUNCA emitas diagnósticos médicos definitivos ni recetes fármacos. Clasifica la prioridad ('HIGH', 'MEDIUM', 'LOW'), "
-                        "detecta la especie ('Canino', 'Felino', 'Conejo', 'Cuy', 'Erizo') y selecciona un first_aid_protocol_id válido."
+                        f"detecta la especie ({', '.join(allowed_species)}) y selecciona un first_aid_protocol_id válido."
                     ),
                     "messages": [{"role": "user", "content": f"Mensaje del tutor en WhatsApp: {symptom_text}"}],
                     "tools": [tool_def],
@@ -5006,9 +5175,12 @@ def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
                     pid = inp.get("first_aid_protocol_id", "PREVENTIVO_RUTINA")
                     if pid not in FIRST_AID_PROTOCOLS:
                         pid = "PREVENTIVO_RUTINA"
+                    esp_det = inp.get("especie_detectada", "Canino")
+                    if esp_det not in allowed_species:
+                        esp_det = "Canino"
                     return {
                         "urgency_level": inp.get("urgency_level", "LOW"),
-                        "especie_detectada": inp.get("especie_detectada", "Canino"),
+                        "especie_detectada": esp_det,
                         "motivo_resumido": inp.get("motivo_resumido", symptom_text[:70]),
                         "first_aid_protocol_id": pid
                     }
@@ -5020,16 +5192,16 @@ def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
         pid, urg, motivo = "RESPIRATORIO_CRITICO", "HIGH", "Dificultad respiratoria aguda"
     elif any(w in texto_l for w in ["atropell", "golpe", "sangr", "herid", "fractur", "convuls"]):
         pid, urg, motivo = "TRAUMA_URGENCIAS", "HIGH", "Traumatismo o herida de urgencia"
-    elif any(w in texto_l for w in ["vomit", "diarre", "decaid", "no come", "dejo de comer", "inapet"]):
+    elif any(w in texto_l for w in ["vomit", "diarre", "decaid", "no come", "dejo de comer", "lej", "inapet"]):
         pid, urg, motivo = "GI_VOMITO_AGUDO", "MEDIUM", "Cuadro digestivo o inapetencia"
     else:
         pid, urg, motivo = "PREVENTIVO_RUTINA", "LOW", "Consulta preventiva / Control sano"
 
-    if any(w in texto_l for w in ["conej", "bunny"]):
+    if any(w in texto_l for w in ["conej", "bunny"]) and "Conejo" in allowed_species:
         esp = "Conejo"
-    elif any(w in texto_l for w in ["cuy", "cobay"]):
+    elif any(w in texto_l for w in ["cuy", "cobay"]) and "Cuy" in allowed_species:
         esp = "Cuy"
-    elif any(w in texto_l for w in ["eriz"]):
+    elif any(w in texto_l for w in ["eriz"]) and "Erizo" in allowed_species:
         esp = "Erizo"
     elif any(w in texto_l for w in ["gat", "felin", "michi"]):
         esp = "Felino"
@@ -5042,6 +5214,89 @@ def evaluate_whatsapp_triage_ai_sync(symptom_text: str) -> Dict[str, Any]:
         "motivo_resumido": motivo,
         "first_aid_protocol_id": pid
     }
+
+
+@app.get("/api/v1/covet/whatsapp/tenants")
+def list_whatsapp_vet_tenants():
+    """
+    Lista los perfiles veterinarios Multi-Tenant activos en el servidor de Hetzner
+    (Dra. Daniela Alcázar, 2ª Veterinaria Piloto y futuros clientes).
+    """
+    sanitized = {}
+    for slug, cfg in WHATSAPP_VET_TENANTS.items():
+        copy_cfg = dict(cfg)
+        copy_cfg["has_custom_token"] = bool(copy_cfg.pop("access_token", ""))
+        sanitized[slug] = copy_cfg
+    return {
+        "status": "OK",
+        "total_tenants": len(sanitized),
+        "tenants": sanitized,
+        "dev_sandbox_commands": [
+            "/modo daniela",
+            "/modo vet2",
+            "/modo info"
+        ]
+    }
+
+
+@app.post("/api/v1/covet/whatsapp/tenants/configure")
+def configure_whatsapp_vet_tenant(req: WhatsAppTenantConfigRequest):
+    """
+    Permite crear o actualizar en caliente los datos de una veterinaria piloto o cliente SaaS
+    (su phone_number_id de Meta, tarifas, especies, comunas y cuenta bancaria para transferencias).
+    """
+    slug = req.clinica_slug.strip().lower()
+    base_cfg = WHATSAPP_VET_TENANTS.get(slug, dict(WHATSAPP_VET_TENANTS["vet-piloto-2"]))
+    base_cfg["clinica_slug"] = slug
+
+    if req.phone_number_id is not None:
+        base_cfg["phone_number_id"] = req.phone_number_id.strip()
+    if req.access_token is not None:
+        base_cfg["access_token"] = req.access_token.strip()
+    if req.nombre_doctora is not None:
+        base_cfg["nombre_doctora"] = req.nombre_doctora.strip()
+    if req.header_menu is not None:
+        base_cfg["header_menu"] = req.header_menu.strip()
+    if req.subtitulo_servicio is not None:
+        base_cfg["subtitulo_servicio"] = req.subtitulo_servicio.strip()
+    if req.incluye_exoticos is not None:
+        base_cfg["incluye_exoticos"] = req.incluye_exoticos
+        base_cfg["especies_habilitadas"] = (
+            ["Canino", "Felino", "Conejo", "Cuy", "Erizo"]
+            if req.incluye_exoticos
+            else ["Canino", "Felino"]
+        )
+        base_cfg["leyenda_especies"] = (
+            "🐶🐱🐰🐹🦔 _Atención de Caninos, Felinos, Conejos, Cuy y Erizos._"
+            if req.incluye_exoticos
+            else "🐶🐱 _Atención exclusiva de Caninos y Felinos._"
+        )
+    if req.comunas_cobertura is not None:
+        base_cfg["comunas_cobertura"] = req.comunas_cobertura.strip()
+    if req.precio_domicilio_clp is not None:
+        base_cfg["precio_domicilio_clp"] = req.precio_domicilio_clp
+    if req.precio_telemedicina_clp is not None:
+        base_cfg["precio_telemedicina_clp"] = req.precio_telemedicina_clp
+    if req.precio_membresia_clp is not None:
+        base_cfg["precio_membresia_clp"] = req.precio_membresia_clp
+
+    bank = dict(base_cfg.get("datos_transferencia") or {})
+    if req.banco_titular is not None:
+        bank["titular"] = req.banco_titular.strip()
+    if req.banco_rut is not None:
+        bank["rut"] = req.banco_rut.strip()
+    if req.banco_nombre is not None:
+        bank["banco"] = req.banco_nombre.strip()
+    if req.banco_tipo_cuenta is not None:
+        bank["tipo_cuenta"] = req.banco_tipo_cuenta.strip()
+    if req.banco_numero_cuenta is not None:
+        bank["numero_cuenta"] = req.banco_numero_cuenta.strip()
+    if req.banco_email is not None:
+        bank["email"] = req.banco_email.strip()
+    base_cfg["datos_transferencia"] = bank
+
+    WHATSAPP_VET_TENANTS[slug] = base_cfg
+    return {"status": "UPDATED", "clinica_slug": slug, "tenant": base_cfg}
 
 
 @app.get("/api/v1/covet/whatsapp/webhook")
@@ -5072,11 +5327,10 @@ def handle_meta_whatsapp_webhook(
     db: Session = Depends(get_db)
 ):
     """
-    Gestor 100% Nativo de Mensajes de WhatsApp Cloud API para la Dra. Daniela Alcázar:
-    - Recibe mensajes entrantes de Meta (`text`, `interactive.button_reply`, `interactive.list_reply`, `interactive.nfm_reply`).
-    - Persiste el estado conversacional del tutor en PostgreSQL (`whatsapp_sessions`).
-    - Ejecuta Triaje IA, Suscripción de Membresía ($8.990/mes), Consulta de Carné 24/7, Reserva de Citas
-      (Domicilio $25.000 / Telemedicina $15.000) y Confirmación de Pago In-Chat SIN enviar ningún link web.
+    Gestor Multi-Veterinario 100% Nativo de Mensajes de WhatsApp Cloud API:
+    - Enruta automáticamente por `metadata.phone_number_id` (Dra. Daniela, 2ª Veterinaria Piloto o futuros clientes).
+    - Soporta comandos de desarrollador (`/modo daniela`, `/modo vet2`, `/modo info`) para probar todos los perfiles desde el número gratuito de prueba de Meta.
+    - Cierra pagos dentro del mismo chat mostrando los datos de transferencia bancaria de cada doctora y recibiendo confirmación por botón o foto del comprobante.
     """
     ahora = datetime.datetime.utcnow()
     outbound_dispatches: List[Dict[str, Any]] = []
@@ -5085,6 +5339,8 @@ def handle_meta_whatsapp_webhook(
     for entry in entries:
         for change in entry.get("changes") or []:
             value = change.get("value") or {}
+            metadata = value.get("metadata") or {}
+            incoming_phone_id = str(metadata.get("phone_number_id") or "")
             contacts = value.get("contacts") or []
             messages = value.get("messages") or []
 
@@ -5100,13 +5356,17 @@ def handle_meta_whatsapp_webhook(
                 else "Tutor(a)"
             ) or "Tutor(a)"
 
-            # Extraer texto o ID de botón/lista pulsado por el usuario
+            # Extraer texto, botón/lista o imagen de comprobante enviado por el usuario
             msg_type = msg.get("type", "text")
             user_text = ""
             action_id = ""
+            is_receipt_media = False
 
             if msg_type == "text":
                 user_text = (msg.get("text", {}).get("body") or "").strip()
+            elif msg_type in ("image", "document"):
+                is_receipt_media = True
+                user_text = "[Comprobante de transferencia adjunto]"
             elif msg_type == "interactive":
                 inter = msg.get("interactive") or {}
                 inter_type = inter.get("type")
@@ -5117,7 +5377,6 @@ def handle_meta_whatsapp_webhook(
                     action_id = inter.get("list_reply", {}).get("id", "")
                     user_text = inter.get("list_reply", {}).get("title", "")
                 elif inter_type == "nfm_reply":
-                    # Respuesta de un formulario nativo WhatsApp Flow
                     action_id = "FLOW_TRIAGE_SUBMITTED"
                     user_text = inter.get("nfm_reply", {}).get("response_json", "{}")
 
@@ -5137,34 +5396,30 @@ def handle_meta_whatsapp_webhook(
 
             ctx = dict(session_row.context_json) if isinstance(session_row.context_json, dict) else {}
             step = session_row.current_step or "MAIN_MENU"
-            lower_text = user_text.lower()
+            lower_text = user_text.lower().strip()
 
-            # Comandos globales para abrir el Menú Principal
-            if action_id == "BTN_MENU_PRINCIPAL" or lower_text in ("hola", "menu", "menú", "inicio", "buenas", "empezar"):
+            # =========================================================
+            # COMANDOS DE DESARROLLADOR (/modo daniela | /modo vet2 | /modo info)
+            # Permite probar todos los perfiles desde el número gratuito de Meta
+            # =========================================================
+            if lower_text.startswith("/modo"):
+                parts_cmd = lower_text.split()
+                arg = parts_cmd[1] if len(parts_cmd) > 1 else "info"
+                if arg in ("daniela", "dra-daniela-alcazar", "1"):
+                    ctx["dev_tenant_override"] = "dra-daniela-alcazar"
+                elif arg in ("vet2", "piloto2", "vet-piloto-2", "2"):
+                    ctx["dev_tenant_override"] = "vet-piloto-2"
+                elif arg in ("auto", "reset"):
+                    ctx.pop("dev_tenant_override", None)
+                elif arg in WHATSAPP_VET_TENANTS:
+                    ctx["dev_tenant_override"] = arg
+
+                session_row.context_json = ctx
                 session_row.current_step = "MAIN_MENU"
                 session_row.updated_at = ahora
                 db.commit()
-                outbound_dispatches.append(
-                    send_whatsapp_cloud_message(raw_from, build_wa_main_menu_interactive(profile_name))
-                )
-                continue
 
-            # =========================================================
-            # FLUJO A: VER Y SUSCRIBIR MEMBRESÍA CUIDADO CONTINUO ($8.990/MES)
-            # =========================================================
-            if action_id == "BTN_MEMBRESIA_8990" or "membres" in lower_text or "8990" in lower_text:
-                session_row.current_step = "VIEWING_MEMBERSHIP"
-                session_row.updated_at = ahora
-                db.commit()
-                outbound_dispatches.append(
-                    send_whatsapp_cloud_message(raw_from, build_wa_membership_card_interactive())
-                )
-                continue
-
-            if action_id == "SUB_INICIAR_8990":
-                session_row.current_step = "AWAITING_SUB_PET_NAME"
-                session_row.updated_at = ahora
-                db.commit()
+                active_tenant = resolve_whatsapp_vet_tenant(incoming_phone_id, ctx)
                 outbound_dispatches.append(
                     send_whatsapp_cloud_message(
                         raw_from,
@@ -5172,12 +5427,85 @@ def handle_meta_whatsapp_webhook(
                             "type": "text",
                             "text": {
                                 "body": (
-                                    "🐾 *Inscripción Membresía Cuidado Continuo ($8.990/mes)*\n\n"
+                                    "🛠️ *Modo Sandbox Desarrollador Activo*\n\n"
+                                    f"• *Perfil activo:* {active_tenant['nombre_doctora']} (`{active_tenant['clinica_slug']}`)\n"
+                                    f"• *Especies:* {', '.join(active_tenant['especies_habilitadas'])}\n"
+                                    f"• *Domicilio:* {format_clp(active_tenant['precio_domicilio_clp'])} | *Telemedicina:* {format_clp(active_tenant['precio_telemedicina_clp'])}\n"
+                                    f"• *Phone Number ID detectado:* `{incoming_phone_id or 'SANDBOX_DEFAULT'}`\n\n"
+                                    "_A continuación se despliega el menú nativo tal como lo verán los pacientes de esta doctora:_"
+                                )
+                            }
+                        },
+                        tenant_cfg=active_tenant,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        build_wa_main_menu_interactive(profile_name, active_tenant),
+                        tenant_cfg=active_tenant,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                continue
+
+            # Resolver el perfil de la veterinaria correspondiente a este chat
+            tenant_cfg = resolve_whatsapp_vet_tenant(incoming_phone_id, ctx)
+            clinica_slug = tenant_cfg["clinica_slug"]
+
+            # Comandos globales para abrir el Menú Principal
+            if action_id == "BTN_MENU_PRINCIPAL" or lower_text in ("hola", "menu", "menú", "inicio", "buenas", "empezar"):
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        build_wa_main_menu_interactive(profile_name, tenant_cfg),
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                continue
+
+            # =========================================================
+            # FLUJO A: VER Y SUSCRIBIR MEMBRESÍA CUIDADO CONTINUO
+            # =========================================================
+            if action_id == "BTN_MEMBRESIA_8990" or "membres" in lower_text or "8990" in lower_text or "plan" in lower_text:
+                session_row.current_step = "VIEWING_MEMBERSHIP"
+                session_row.updated_at = ahora
+                db.commit()
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        build_wa_membership_card_interactive(tenant_cfg),
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                continue
+
+            if action_id == "SUB_INICIAR_8990":
+                session_row.current_step = "AWAITING_SUB_PET_NAME"
+                session_row.updated_at = ahora
+                db.commit()
+                precio_mem_str = format_clp(tenant_cfg.get("precio_membresia_clp", 8990))
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "text",
+                            "text": {
+                                "body": (
+                                    f"🐾 *Inscripción Membresía Cuidado Continuo ({precio_mem_str}/mes) — {tenant_cfg['nombre_doctora']}*\n\n"
                                     "Por favor escribe el *nombre de tu mascota* y tu *comuna/dirección* separados por una coma.\n"
                                     "_(Ejemplo: Canela, Av. Providencia 1234)_"
                                 )
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
@@ -5193,7 +5521,12 @@ def handle_meta_whatsapp_webhook(
                 session_row.updated_at = ahora
                 db.commit()
                 outbound_dispatches.append(
-                    send_whatsapp_cloud_message(raw_from, build_wa_species_list_message("SUB_ESP", pet_name))
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        build_wa_species_list_message("SUB_ESP", pet_name, tenant_cfg),
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
                 )
                 continue
 
@@ -5208,8 +5541,8 @@ def handle_meta_whatsapp_webhook(
                     tutor_direccion=direccion,
                     paciente_nombre=pet_name,
                     especie=especie_sel,
-                    clinica_slug="dra-daniela-alcazar",
-                    metodo_pago="WHATSAPP_CLOUD_NATIVE",
+                    clinica_slug=clinica_slug,
+                    metodo_pago="TRANSFERENCIA_DIRECTA_WHATSAPP",
                     consentimiento_ley21719=True
                 )
                 res_sub = suscribir_membresia_cuidado_continuo(sub_req, background_tasks, db)
@@ -5219,6 +5552,8 @@ def handle_meta_whatsapp_webhook(
                 session_row.updated_at = ahora
                 db.commit()
 
+                precio_mem_str = format_clp(tenant_cfg.get("precio_membresia_clp", 8990))
+                bank_block = format_bank_transfer_block(tenant_cfg)
                 outbound_dispatches.append(
                     send_whatsapp_cloud_message(
                         raw_from,
@@ -5228,19 +5563,18 @@ def handle_meta_whatsapp_webhook(
                                 "type": "button",
                                 "header": {
                                     "type": "text",
-                                    "text": "🎉 ¡Membresía Activa en WhatsApp!"
+                                    "text": "🎉 ¡Membresía Inscrita en WhatsApp!"
                                 },
                                 "body": {
                                     "text": (
-                                        f"*{pet_name}* ({especie_sel}) ya está inscrito(a) en la *Membresía Cuidado Continuo* de la Dra. Daniela Alcázar.\n\n"
+                                        f"*{pet_name}* ({especie_sel}) ya tiene su *Membresía Cuidado Continuo* con *{tenant_cfg['nombre_doctora']}*.\n\n"
                                         f"• *Folio Oficial:* `{res_sub['folio_membresia']}`\n"
-                                        f"• *Valor mensual:* $8.990 CLP\n"
+                                        f"• *Valor mensual:* {precio_mem_str} CLP\n"
                                         f"• *💉 Próxima Vacuna:* {res_sub['calendario_preventivo']['proxima_vacuna']}\n"
-                                        f"• *💊 Próxima Desparasitación:* {res_sub['calendario_preventivo']['proxima_desparasitacion']}\n"
-                                        f"• *🏠 Consulta Domicilio Gratis:* 1 disponible\n"
-                                        f"• *⚡ Descuento Urgencias:* 20% OFF activo\n\n"
-                                        "Todo quedó guardado en tu Carné Digital 24/7 dentro de este chat."
-                                    )
+                                        f"• *💊 Próxima Desparasitación:* {res_sub['calendario_preventivo']['proxima_desparasitacion']}\n\n"
+                                        f"{bank_block}\n\n"
+                                        "_Puedes enviar la foto del comprobante en este mismo chat._"
+                                    )[:1020]
                                 },
                                 "footer": {
                                     "text": "Respaldo Ley N° 21.719 • Cero links externos"
@@ -5253,7 +5587,9 @@ def handle_meta_whatsapp_webhook(
                                     ]
                                 }
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
@@ -5265,12 +5601,12 @@ def handle_meta_whatsapp_webhook(
                 membresias = listar_membresias_y_carnet_vivo(telefono=clean_phone, limit=5, db=db)
                 if not membresias:
                     body_carnet = (
-                        "📋 *Historial Clínico y Carné 24/7*\n\n"
+                        f"📋 *Historial Clínico y Carné 24/7 — {tenant_cfg['nombre_doctora']}*\n\n"
                         f"Aún no encontramos mascotas asociadas a tu número ({clean_phone}).\n\n"
-                        "Puedes inscribir a tu mascota en la *Membresía Cuidado Continuo ($8.990/mes)* o *Agendar una Consulta* tocando los botones de abajo:"
+                        "Puedes inscribir a tu mascota en la *Membresía Cuidado Continuo* o *Agendar una Consulta* tocando los botones de abajo:"
                     )
                 else:
-                    bloques = ["📋 *Tu Carné e Historial Clínico en Vivo 24/7*"]
+                    bloques = [f"📋 *Tu Carné e Historial Clínico 24/7 ({tenant_cfg['nombre_doctora']})*"]
                     for m in membresias[:3]:
                         notas = m.get("notas_clinicas_24_7") or []
                         ultima_nota = (
@@ -5280,7 +5616,7 @@ def handle_meta_whatsapp_webhook(
                         )
                         bloques.append(
                             f"\n🐾 *{m['paciente_nombre']}* ({m['especie']}) — Folio `{m['folio_membresia']}`\n"
-                            f"  • *Estado Membresía:* {m['estado']} ($8.990/mes)\n"
+                            f"  • *Estado Membresía:* {m['estado']}\n"
                             f"  • *💉 Próxima Vacuna:* {m['proxima_vacuna_fecha']}\n"
                             f"  • *💊 Próxima Desparasitación:* {m['proxima_desparasitacion_fecha']}\n"
                             f"  • *🏠 Consulta Domicilio Gratis:* {'Usada' if m['consulta_domicilio_gratis_usada'] else 'Disponible'}"
@@ -5296,7 +5632,7 @@ def handle_meta_whatsapp_webhook(
                             "interactive": {
                                 "type": "button",
                                 "body": {"text": body_carnet[:1020]},
-                                "footer": {"text": "Dra. Daniela Alcázar • Historial en Vivo"},
+                                "footer": {"text": f"{tenant_cfg['nombre_doctora'][:40]} • Historial 24/7"},
                                 "action": {
                                     "buttons": [
                                         {"type": "reply", "reply": {"id": "SUB_INICIAR_8990", "title": "💖 Suscribir Mascota"}},
@@ -5305,18 +5641,97 @@ def handle_meta_whatsapp_webhook(
                                     ]
                                 }
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
 
             # =========================================================
-            # FLUJO C: TRIAJE IA + AGENDAMIENTO (DOMICILIO VS TELEMEDICINA) + PAGO IN-CHAT
+            # FLUJO C: CONFIRMACIÓN DE PAGO / RECEPCIÓN DE COMPROBANTE DE TRANSFERENCIA EN EL CHAT
+            # =========================================================
+            if action_id.startswith("PAY_CONFIRM_CITA_") or (is_receipt_media and ctx.get("active_cita_id")):
+                cita_id_str = action_id.replace("PAY_CONFIRM_CITA_", "") if action_id.startswith("PAY_CONFIRM_CITA_") else ""
+                cita_id_val = int(cita_id_str) if cita_id_str.isdigit() else ctx.get("active_cita_id")
+                cita = db.query(CitaDB).filter(CitaDB.id == cita_id_val).first() if cita_id_val else None
+
+                metodo_confirmado = "COMPROBANTE_FOTO_WHATSAPP" if is_receipt_media else "TRANSFERENCIA_CONFIRMADA_WHATSAPP"
+
+                if cita:
+                    cita.estado_reserva = "CONFIRMED"
+                    cita.estado_cita = "CONFIRMED"
+                    cita.confirmada = True
+                    cita.pagado = True
+                    cita.pago_estado = "PAID_GATEWAY"
+                    cita.pago_metodo = metodo_confirmado
+                    db.commit()
+                    db.refresh(cita)
+
+                    broadcast_clinical_event(
+                        "WHATSAPP_NATIVE_APPOINTMENT_CONFIRMED",
+                        {
+                            "cita_id": cita.id,
+                            "clinica_slug": clinica_slug,
+                            "nombre_doctora": tenant_cfg["nombre_doctora"],
+                            "tutor_nombre": profile_name,
+                            "tutor_telefono": clean_phone,
+                            "modalidad": cita.modalidad,
+                            "ventana_horaria": cita.ventana_horaria,
+                            "monto_clp": cita.monto_clp,
+                            "metodo_pago": metodo_confirmado
+                        }
+                    )
+
+                session_row.current_step = "MAIN_MENU"
+                session_row.updated_at = ahora
+                db.commit()
+
+                outbound_dispatches.append(
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        {
+                            "type": "interactive",
+                            "interactive": {
+                                "type": "button",
+                                "header": {
+                                    "type": "text",
+                                    "text": "✅ ¡Transferencia y Cita Confirmadas!"
+                                },
+                                "body": {
+                                    "text": (
+                                        f"Excelente *{profile_name}*, hemos registrado tu confirmación de pago para la consulta `#{cita.id if cita else ''}` "
+                                        f"en modalidad *{cita.modalidad if cita else 'DOMICILIO'}* ({cita.ventana_horaria if cita else 'Horario confirmado'}) "
+                                        f"con *{tenant_cfg['nombre_doctora']}*.\n\n"
+                                        "🔔 Recibirás en este mismo chat tu recordatorio automático 24h antes y tu Receta Médica Oficial al finalizar la consulta."
+                                    )
+                                },
+                                "footer": {
+                                    "text": f"{tenant_cfg['nombre_doctora'][:40]} • Cita Confirmada"
+                                },
+                                "action": {
+                                    "buttons": [
+                                        {"type": "reply", "reply": {"id": "BTN_HISTORIAL_24_7", "title": "📋 Mi Carné 24/7"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Ver Membresía"}},
+                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                    ]
+                                }
+                            }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
+                )
+                continue
+
+            # =========================================================
+            # FLUJO D: TRIAJE IA + AGENDAMIENTO (DOMICILIO VS TELEMEDICINA) + DATOS DE TRANSFERENCIA
             # =========================================================
             if action_id == "BTN_TRIAJE_CITA":
                 session_row.current_step = "AWAITING_TRIAGE_SYMPTOMS"
                 session_row.updated_at = ahora
                 db.commit()
+                especies_txt = ", ".join(tenant_cfg["especies_habilitadas"])
                 outbound_dispatches.append(
                     send_whatsapp_cloud_message(
                         raw_from,
@@ -5324,18 +5739,20 @@ def handle_meta_whatsapp_webhook(
                             "type": "text",
                             "text": {
                                 "body": (
-                                    "🩺 *Asistente de Triaje y Agendamiento 24/7 — Dra. Daniela Alcázar*\n\n"
-                                    "Cuéntame en un mensaje el *nombre de tu mascota*, qué *especie* es (Perro, Gato, Conejo, Cuy o Erizo) y *qué síntomas presenta o qué consulta necesitas*.\n\n"
-                                    "_(Ejemplo: Mi conejo Copito dejó de comer hoy y necesito visita a domicilio o telemedicina)_"
+                                    f"🩺 *Asistente de Triaje y Agendamiento 24/7 — {tenant_cfg['nombre_doctora']}*\n\n"
+                                    f"Cuéntame en un mensaje el *nombre de tu mascota*, qué *especie* es ({especies_txt}) y *qué síntomas presenta o qué consulta necesitas*.\n\n"
+                                    "_(Ejemplo: Mi mascota dejó de comer hoy y necesito visita a domicilio o telemedicina)_"
                                 )
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
 
             if step == "AWAITING_TRIAGE_SYMPTOMS" or action_id == "FLOW_TRIAGE_SUBMITTED" or (step != "AWAITING_SUB_PET_NAME" and user_text and not action_id):
-                ai_eval = evaluate_whatsapp_triage_ai_sync(user_text)
+                ai_eval = evaluate_whatsapp_triage_ai_sync(user_text, tenant_cfg)
                 pid = ai_eval["first_aid_protocol_id"]
                 protocol = FIRST_AID_PROTOCOLS.get(pid, FIRST_AID_PROTOCOLS["PREVENTIVO_RUTINA"])
                 indicaciones_str = "\n".join(f"• {ind}" for ind in (protocol.get("indicaciones") or [])[:2])
@@ -5351,15 +5768,18 @@ def handle_meta_whatsapp_webhook(
                 session_row.updated_at = ahora
                 db.commit()
 
+                p_dom = format_clp(tenant_cfg["precio_domicilio_clp"])
+                p_tel = format_clp(tenant_cfg["precio_telemedicina_clp"])
+
                 body_triage = (
-                    f"🩺 *Resultado de Recepción 24/7*\n"
+                    f"🩺 *Resultado de Recepción 24/7 ({tenant_cfg['nombre_doctora']})*\n"
                     f"• *Especie detectada:* {ai_eval['especie_detectada']}\n"
                     f"• *Motivo:* {ai_eval['motivo_resumido']}\n"
                     f"• *Prioridad:* {ai_eval['urgency_level']}\n\n"
                     f"📋 *Primeros Auxilios Pre-Aprobados ({protocol['titulo']}):*\n"
                     f"{indicaciones_str}\n\n"
                     f"🚫 *Importante:* {prohibicion_str}\n\n"
-                    "🛡️ _Regla Clínica: Este asistente clasifica prioridad y agenda tu hora. El diagnóstico definitivo es exclusivo de la Dra. Daniela Alcázar._\n\n"
+                    f"🛡️ _Regla Clínica: Este asistente clasifica prioridad y agenda tu hora. El diagnóstico definitivo es exclusivo de {tenant_cfg['nombre_doctora']}._\n\n"
                     "¿En qué modalidad prefieres agendar tu consulta?"
                 )
 
@@ -5374,13 +5794,15 @@ def handle_meta_whatsapp_webhook(
                                 "footer": {"text": "Elige modalidad sin salir de WhatsApp"},
                                 "action": {
                                     "buttons": [
-                                        {"type": "reply", "reply": {"id": "MOD_DOMICILIO", "title": "🏠 Domicilio $25.000"}},
-                                        {"type": "reply", "reply": {"id": "MOD_TELEMEDICINA", "title": "💻 Telemed. $15.000"}},
+                                        {"type": "reply", "reply": {"id": "MOD_DOMICILIO", "title": f"🏠 Domicilio {p_dom}"[:20]}},
+                                        {"type": "reply", "reply": {"id": "MOD_TELEMEDICINA", "title": f"💻 Telemed. {p_tel}"[:20]}},
                                         {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
                                     ]
                                 }
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
@@ -5395,18 +5817,27 @@ def handle_meta_whatsapp_webhook(
 
                 slots = calculate_hybrid_slots(db, ctx.get("triage_urgency", "LOW"))
                 outbound_dispatches.append(
-                    send_whatsapp_cloud_message(raw_from, build_wa_schedule_list_message(slots, modalidad))
+                    send_whatsapp_cloud_message(
+                        raw_from,
+                        build_wa_schedule_list_message(slots, modalidad, tenant_cfg),
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
+                    )
                 )
                 continue
 
             if action_id.startswith("SLOT_"):
                 slot_label = user_text or action_id.replace("SLOT_EXACT_", "").replace("SLOT_WIN_", "")
                 modalidad = ctx.get("triage_modalidad", "DOMICILIO")
-                monto_clp = 15000 if modalidad == "TELEMEDICINA" else 25000
+                monto_clp = (
+                    tenant_cfg["precio_telemedicina_clp"]
+                    if modalidad == "TELEMEDICINA"
+                    else tenant_cfg["precio_domicilio_clp"]
+                )
                 especie = ctx.get("triage_especie", "Canino")
                 motivo = ctx.get("triage_motivo", "Consulta agendada en WhatsApp")
 
-                # Crear Tutor, Paciente y Cita (HOLD_15_MIN) en PostgreSQL
+                # Crear Tutor, Paciente y Cita (HOLD_15_MIN) en PostgreSQL asociados al clinica_slug de la doctora
                 tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
                 if not tutor:
                     tutor = TutorDB(
@@ -5449,13 +5880,15 @@ def handle_meta_whatsapp_webhook(
                     hold_expires_at=ahora + datetime.timedelta(minutes=15),
                     pagado=False,
                     monto_clp=monto_clp,
-                    clinica_slug="dra-daniela-alcazar",
+                    clinica_slug=clinica_slug,
                     sintomas_triaje={
                         "tutor_nombre": profile_name,
                         "tutor_telefono": clean_phone,
                         "paciente_nombre": paciente.nombre,
                         "especie": especie,
-                        "canal": "WHATSAPP_CLOUD_NATIVO"
+                        "canal": "WHATSAPP_CLOUD_NATIVO",
+                        "clinica_slug": clinica_slug,
+                        "nombre_doctora": tenant_cfg["nombre_doctora"]
                     }
                 )
                 db.add(nueva_cita)
@@ -5468,6 +5901,7 @@ def handle_meta_whatsapp_webhook(
                 session_row.updated_at = ahora
                 db.commit()
 
+                bank_block = format_bank_transfer_block(tenant_cfg)
                 outbound_dispatches.append(
                     send_whatsapp_cloud_message(
                         raw_from,
@@ -5481,16 +5915,16 @@ def handle_meta_whatsapp_webhook(
                                 },
                                 "body": {
                                     "text": (
-                                        f"Tu bloque ha sido reservado en la agenda de la *Dra. Daniela Alcázar*:\n\n"
+                                        f"Tu bloque ha sido reservado con *{tenant_cfg['nombre_doctora']}*:\n\n"
                                         f"• *Cita ID:* `#{nueva_cita.id}`\n"
-                                        f"• *Modalidad:* {modalidad}\n"
-                                        f"• *Horario:* {slot_label}\n"
-                                        f"• *Arancel:* ${monto_clp:,} CLP\n\n"
-                                        "Confirma tu pago aquí mismo en el chat (sin abrir links externos) tocando el botón de abajo:"
-                                    ).replace(",", ".")
+                                        f"• *Modalidad:* {modalidad} ({slot_label})\n"
+                                        f"• *Monto a transferir:* {format_clp(monto_clp)} CLP\n\n"
+                                        f"{bank_block}\n\n"
+                                        "Realiza la transferencia y toca *✅ Ya transferí* (o envía la foto del comprobante aquí mismo en el chat):"
+                                    )[:1020]
                                 },
                                 "footer": {
-                                    "text": "Checkout Nativo en WhatsApp • Cero Redirección"
+                                    "text": "Transferencia Directa • Cero Comisiones • Sin Links"
                                 },
                                 "action": {
                                     "buttons": [
@@ -5498,7 +5932,7 @@ def handle_meta_whatsapp_webhook(
                                             "type": "reply",
                                             "reply": {
                                                 "id": f"PAY_CONFIRM_CITA_{nueva_cita.id}",
-                                                "title": "✅ Confirmar y Pagar"
+                                                "title": "✅ Ya transferí"
                                             }
                                         },
                                         {
@@ -5511,79 +5945,21 @@ def handle_meta_whatsapp_webhook(
                                     ]
                                 }
                             }
-                        }
+                        },
+                        tenant_cfg=tenant_cfg,
+                        incoming_phone_number_id=incoming_phone_id
                     )
                 )
                 continue
 
-            if action_id.startswith("PAY_CONFIRM_CITA_"):
-                cita_id_str = action_id.replace("PAY_CONFIRM_CITA_", "")
-                cita_id_val = int(cita_id_str) if cita_id_str.isdigit() else ctx.get("active_cita_id")
-                cita = db.query(CitaDB).filter(CitaDB.id == cita_id_val).first() if cita_id_val else None
-
-                if cita:
-                    cita.estado_reserva = "CONFIRMED"
-                    cita.estado_cita = "CONFIRMED"
-                    cita.confirmada = True
-                    cita.pagado = True
-                    cita.pago_estado = "PAID_GATEWAY"
-                    cita.pago_metodo = "WHATSAPP_INCHAT_NATIVE"
-                    db.commit()
-                    db.refresh(cita)
-
-                    broadcast_clinical_event(
-                        "WHATSAPP_NATIVE_APPOINTMENT_CONFIRMED",
-                        {
-                            "cita_id": cita.id,
-                            "tutor_nombre": profile_name,
-                            "tutor_telefono": clean_phone,
-                            "modalidad": cita.modalidad,
-                            "ventana_horaria": cita.ventana_horaria,
-                            "monto_clp": cita.monto_clp
-                        }
-                    )
-
-                session_row.current_step = "MAIN_MENU"
-                session_row.updated_at = ahora
-                db.commit()
-
-                outbound_dispatches.append(
-                    send_whatsapp_cloud_message(
-                        raw_from,
-                        {
-                            "type": "interactive",
-                            "interactive": {
-                                "type": "button",
-                                "header": {
-                                    "type": "text",
-                                    "text": "✅ ¡Cita 100% Confirmada en WhatsApp!"
-                                },
-                                "body": {
-                                    "text": (
-                                        f"Excelente *{profile_name}*, tu consulta `#{cita.id if cita else ''}` en modalidad *{cita.modalidad if cita else 'DOMICILIO'}* "
-                                        f"({cita.ventana_horaria if cita else 'Horario confirmado'}) ya está pagada y confirmada en la agenda de la *Dra. Daniela Alcázar*.\n\n"
-                                        "🔔 Recibirás en este mismo chat tu recordatorio automático 24h antes y tu Receta Médica Oficial al finalizar la consulta."
-                                    )
-                                },
-                                "footer": {
-                                    "text": "Dra. Daniela Alcázar • Atención Confirmada"
-                                },
-                                "action": {
-                                    "buttons": [
-                                        {"type": "reply", "reply": {"id": "BTN_HISTORIAL_24_7", "title": "📋 Mi Carné 24/7"}},
-                                        {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Membresía $8.990"}},
-                                        {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
-                                    ]
-                                }
-                            }
-                        }
-                    )
-                )
-                continue
-
-            # Fallback amigable: mostrar Menú Principal Interactivo
+            # Fallback amigable: mostrar Menú Principal Interactivo de la doctora activa
             outbound_dispatches.append(
-                send_whatsapp_cloud_message(raw_from, build_wa_main_menu_interactive(profile_name))
+                send_whatsapp_cloud_message(
+                    raw_from,
+                    build_wa_main_menu_interactive(profile_name, tenant_cfg),
+                    tenant_cfg=tenant_cfg,
+                    incoming_phone_number_id=incoming_phone_id
+                )
             )
 
     return {
