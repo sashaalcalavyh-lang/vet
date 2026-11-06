@@ -5216,6 +5216,88 @@ def evaluate_whatsapp_triage_ai_sync(
     }
 
 
+def generate_whatsapp_conversational_reply_ai_sync(
+    user_message: str,
+    chat_history: List[Dict[str, str]],
+    tenant_cfg: Dict[str, Any],
+    profile_name: str = "Tutor(a)"
+) -> str:
+    """
+    Motor Conversacional Multi-Turno con Memoria Reciente y Conocimiento del Negocio.
+    Permite al agente responder preguntas libres (horarios, vacunas, comunas, modalidades,
+    precios, dudas cotidianas) recordando el historial del chat, sin inventar información
+    y guiando naturalmente a agendar o suscribirse.
+    """
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    t = tenant_cfg
+    especies_str = ", ".join(t.get("especies_habilitadas", ["Canino", "Felino"]))
+    p_dom = format_clp(t.get("precio_domicilio_clp", 25000))
+    p_tel = format_clp(t.get("precio_telemedicina_clp", 15000))
+    p_mem = format_clp(t.get("precio_membresia_clp", 8990))
+    comunas = t.get("comunas_cobertura", "Santiago")
+
+    system_prompt = (
+        f"Eres el Asistente Clínico Inteligente 24/7 de {t['nombre_doctora']} en WhatsApp.\n"
+        f"Servicio: {t['subtitulo_servicio']}.\n"
+        f"Especies atendidas: {especies_str}.\n"
+        f"Cobertura a Domicilio: {comunas}.\n"
+        f"Aranceles: Consulta a Domicilio {p_dom} CLP | Telemedicina {p_tel} CLP.\n"
+        f"Membresía Cuidado Continuo: {p_mem} CLP/mes (incluye vacunas anuales, 1 visita gratis al año, 20% OFF urgencias, carné digital 24/7).\n"
+        "Reglas obligatorias:\n"
+        "1. Sé empático, profesional, cálido y conciso (máximo 2 a 3 párrafos cortos adaptados a WhatsApp).\n"
+        "2. NUNCA emitas un diagnóstico médico definitivo ni recetes fármacos específicos (Regla SAG / Colmevet). Recomienda evaluar al paciente en consulta.\n"
+        "3. Responde la duda del tutor con precisión usando el conocimiento del negocio y la memoria previa del chat.\n"
+        "4. Al final, invita amablemente a agendar su consulta o ver los planes usando los botones del chat."
+    )
+
+    if anthropic_key:
+        try:
+            # Construir historial para Claude (máximo últimos 6 turnos)
+            claude_messages: List[Dict[str, str]] = []
+            for item in chat_history[-6:]:
+                role = item.get("role")
+                content = item.get("content")
+                if role in ("user", "assistant") and content:
+                    claude_messages.append({"role": role, "content": str(content)[:500]})
+
+            # Asegurar que el último mensaje sea el actual del usuario
+            if not claude_messages or claude_messages[-1].get("content") != user_message:
+                claude_messages.append({"role": "user", "content": user_message[:500]})
+
+            # Claude exige que el primer mensaje sea 'user'
+            if claude_messages and claude_messages[0]["role"] != "user":
+                claude_messages.pop(0)
+
+            resp = llm_post(
+                "https://api.anthropic.com/v1/messages",
+                timeout=14.0,
+                max_attempts=1,
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": ANTHROPIC_MODEL,
+                    "max_tokens": 400,
+                    "system": system_prompt,
+                    "messages": claude_messages
+                }
+            )
+            data = resp.json()
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    return block.get("text", "").strip()
+        except Exception as exc:
+            logger.warning(f"[WhatsApp Conversacional AI] Fallback a respuesta local: {exc}")
+
+    # Fallback conversacional determinístico inteligente
+    return (
+        f"¡Hola {profile_name}! En la consulta de *{t['nombre_doctora']}* atendemos {especies_str} con visitas a domicilio en {comunas} ({p_dom} CLP) y telemedicina ({p_tel} CLP).\n\n"
+        "Para brindarte una atención personalizada y revisar en detalle el caso de tu mascota, puedes agendar una visita o consultar la membresía preventiva con los botones de abajo:"
+    )
+
+
 @app.get("/api/v1/covet/whatsapp/tenants")
 def list_whatsapp_vet_tenants():
     """
@@ -5752,6 +5834,60 @@ def handle_meta_whatsapp_webhook(
                 continue
 
             if step == "AWAITING_TRIAGE_SYMPTOMS" or action_id == "FLOW_TRIAGE_SUBMITTED" or (step != "AWAITING_SUB_PET_NAME" and user_text and not action_id):
+                # Detectar si el texto describe un síntoma clínico o es una consulta general de negocio / conversación
+                symptom_keywords = [
+                    "respira", "ahog", "asfix", "cianosis", "azul", "atropell", "golpe", "sangr", "herid",
+                    "fractur", "convuls", "vomit", "diarre", "decaid", "no come", "dejo de comer", "inapet",
+                    "dolor", "renguea", "cojea", "ojo", "tos", "fiebre", "decaída", "decaído", "mal", "enfermo",
+                    "enferma", "pata", "bulto", "alergia", "comezón", "picaz", "rasca", "pulga", "garrapata"
+                ]
+                has_symptom_signal = any(k in lower_text for k in symptom_keywords) or step == "AWAITING_TRIAGE_SYMPTOMS"
+
+                if not has_symptom_signal:
+                    # FLUJO CONVERSACIONAL CON MEMORIA MULTI-TURNO: Pregunta sobre horarios, comunas, precios o dudas
+                    chat_history = ctx.get("chat_history", [])
+                    chat_history.append({"role": "user", "content": user_text})
+
+                    ai_reply = generate_whatsapp_conversational_reply_ai_sync(
+                        user_message=user_text,
+                        chat_history=chat_history,
+                        tenant_cfg=tenant_cfg,
+                        profile_name=profile_name
+                    )
+
+                    chat_history.append({"role": "assistant", "content": ai_reply})
+                    # Guardar últimos 8 mensajes en PostgreSQL para memoria continua
+                    ctx["chat_history"] = chat_history[-8:]
+                    session_row.context_json = ctx
+                    session_row.current_step = "MAIN_MENU"
+                    session_row.updated_at = ahora
+                    db.commit()
+
+                    p_dom = format_clp(tenant_cfg["precio_domicilio_clp"])
+                    outbound_dispatches.append(
+                        send_whatsapp_cloud_message(
+                            raw_from,
+                            {
+                                "type": "interactive",
+                                "interactive": {
+                                    "type": "button",
+                                    "body": {"text": ai_reply[:1020]},
+                                    "footer": {"text": f"{tenant_cfg['nombre_doctora'][:40]} • Asistencia 24/7"},
+                                    "action": {
+                                        "buttons": [
+                                            {"type": "reply", "reply": {"id": "BTN_TRIAJE_CITA", "title": "🩺 Agendar Consulta"}},
+                                            {"type": "reply", "reply": {"id": "BTN_MEMBRESIA_8990", "title": "💖 Ver Planes"}},
+                                            {"type": "reply", "reply": {"id": "BTN_MENU_PRINCIPAL", "title": "⬅️ Menú Principal"}}
+                                        ]
+                                    }
+                                }
+                            },
+                            tenant_cfg=tenant_cfg,
+                            incoming_phone_number_id=incoming_phone_id
+                        )
+                    )
+                    continue
+
                 ai_eval = evaluate_whatsapp_triage_ai_sync(user_text, tenant_cfg)
                 pid = ai_eval["first_aid_protocol_id"]
                 protocol = FIRST_AID_PROTOCOLS.get(pid, FIRST_AID_PROTOCOLS["PREVENTIVO_RUTINA"])
