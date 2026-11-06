@@ -713,11 +713,12 @@ def build_cita_context_prompt(db: Session, cita_id: Optional[int]) -> Tuple[str,
 
 
 def extract_multi_soap_from_transcript(transcript_text: str, cita_context_str: str = "", defaults: Optional[Dict[str, Any]] = None) -> List[SOAPFicheSchema]:
-    """Invoca a Claude con Tool Use para extraer 1 o N fichas SOAP independientes desde una transcripción."""
+    """Extrae 1 o N fichas SOAP independientes desde una transcripción con Claude Tool Use + failover automático a Groq GPT-OSS-120B."""
     defaults = defaults or {}
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if not anthropic_key:
-        raise ValueError("ANTHROPIC_API_KEY no configurada en las variables de entorno.")
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not anthropic_key and not groq_key:
+        raise ValueError("Ni ANTHROPIC_API_KEY ni GROQ_API_KEY están configuradas.")
 
     tool_definition = {
         "name": "registrar_ficha_soap",
@@ -731,8 +732,7 @@ def extract_multi_soap_from_transcript(transcript_text: str, cita_context_str: s
     system_prompt = (
         "Actúas como un Médico Veterinario Clínico Senior en Chile. "
         "Transforma el dictado natural del veterinario en terreno en fichas clínicas estructuradas bajo el estándar SOAP estricto "
-        "(S: Subjetivo/Anamnesis, O: Objetivo/Examen Físico, A: Análisis/Diagnóstico Presuntivo, P: Plan Terapéutico y Próximos Pasos) "
-        "utilizando la herramienta `registrar_ficha_soap`. "
+        "(S: Subjetivo/Anamnesis, O: Objetivo/Examen Físico, A: Análisis/Diagnóstico Presuntivo, P: Plan Terapéutico y Próximos Pasos). "
         "REGLA DE MÚLTIPLES PACIENTES: Si en la misma grabación el veterinario atiende o evalúa a 2 o más mascotas "
         "(por ejemplo, dos perros o un perro y un gato en el mismo domicilio), DEBES identificar a cada mascota y crear un objeto SOAP "
         "separado e independiente para cada una dentro de la lista `fichas` (compartiendo `tutor_nombre` y `tutor_telefono` si son del mismo dueño). "
@@ -742,47 +742,75 @@ def extract_multi_soap_from_transcript(transcript_text: str, cita_context_str: s
         "(si un dato no se mencionó, coloca 'No especificado en dictado')."
     )
 
-    anthropic_payload = {
-        "model": ANTHROPIC_MODEL,
-        "max_tokens": 3072,
-        "system": system_prompt,
-        "messages": [
-            {
-                "role": "user",
-                "content": (
-                    f"A continuación se presenta el dictado del veterinario en consulta:\n\n\"\"\"\n{transcript_text}\n\"\"\""
-                    f"{cita_context_str}\n\n"
-                    "Por favor, estructura la(s) ficha(s) clínica(s) SOAP separando por paciente si se atendió a más de una mascota."
-                )
-            }
-        ],
-        "tools": [tool_definition],
-        "tool_choice": {"type": "tool", "name": "registrar_ficha_soap"}
-    }
-
-    anthropic_headers = {
-        "x-api-key": anthropic_key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json"
-    }
-
-    anthropic_resp = llm_post(
-        "https://api.anthropic.com/v1/messages",
-        timeout=60.0,
-        json=anthropic_payload,
-        headers=anthropic_headers
+    user_prompt = (
+        f"A continuación se presenta el dictado del veterinario en consulta:\n\n\"\"\"\n{transcript_text}\n\"\"\""
+        f"{cita_context_str}\n\n"
+        "Por favor, estructura la(s) ficha(s) clínica(s) SOAP separando por paciente si se atendió a más de una mascota."
     )
-    claude_result = anthropic_resp.json()
 
-    content_blocks = claude_result.get("content", [])
-    tool_input = None
-    for block in content_blocks:
-        if block.get("type") == "tool_use" and block.get("name") == "registrar_ficha_soap":
-            tool_input = block.get("input", {})
-            break
+    tool_input: Optional[Dict[str, Any]] = None
+
+    if anthropic_key:
+        try:
+            anthropic_payload = {
+                "model": ANTHROPIC_MODEL,
+                "max_tokens": 3072,
+                "system": system_prompt,
+                "messages": [{"role": "user", "content": user_prompt}],
+                "tools": [tool_definition],
+                "tool_choice": {"type": "tool", "name": "registrar_ficha_soap"}
+            }
+            anthropic_headers = {
+                "x-api-key": anthropic_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+            anthropic_resp = llm_post(
+                "https://api.anthropic.com/v1/messages",
+                timeout=45.0,
+                max_attempts=2,
+                json=anthropic_payload,
+                headers=anthropic_headers
+            )
+            claude_result = anthropic_resp.json()
+            for block in claude_result.get("content", []):
+                if block.get("type") == "tool_use" and block.get("name") == "registrar_ficha_soap":
+                    tool_input = block.get("input", {})
+                    break
+        except Exception as anth_err:
+            logger.warning(f"[SOAP Pipeline] Failover activado hacia Groq GPT-OSS-120B por error en Anthropic: {anth_err}")
+
+    if not tool_input and groq_key:
+        schema_str = json.dumps(SOAPMultiFicheEnvelope.model_json_schema(), ensure_ascii=False)
+        groq_resp = llm_post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            timeout=45.0,
+            headers={
+                "Authorization": f"Bearer {groq_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b"),
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            f"{system_prompt}\n\n"
+                            "Devuelve ÚNICAMENTE un objeto JSON válido con la clave raíz `\"fichas\"` (lista de objetos SOAP) "
+                            f"cumpliendo exactamente este JSON Schema:\n{schema_str}"
+                        )
+                    },
+                    {"role": "user", "content": user_prompt}
+                ]
+            }
+        )
+        groq_content = groq_resp.json()["choices"][0]["message"]["content"]
+        tool_input = json.loads(groq_content)
 
     if not tool_input:
-        raise ValueError(f"Claude no retornó el formato de herramienta esperado: {claude_result}")
+        raise ValueError("No fue posible estructurar el dictado con los motores de IA configurados.")
 
     raw_fichas: List[Dict[str, Any]] = []
     if isinstance(tool_input, dict) and "fichas" in tool_input and isinstance(tool_input["fichas"], list):
@@ -1793,31 +1821,34 @@ def resumir_historial_medico_extenso(req: HistorialResumenRequest, db: Session =
         f"y se mantiene bajo seguimiento preventivo."
     )
 
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if anthropic_key and len(matched_fiches) >= 1:
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if groq_key and len(matched_fiches) >= 1:
         try:
             hist_prompt = "\n".join([
                 f"- Consulta #{c['consulta_num']} ({c['fecha']}): Peso={c['peso_kg']}kg | Anamnesis={c['anamnesis']} | Diagnóstico={c['diagnostico']} | Plan={c['tratamiento']}"
                 for c in cronologia
             ])
             resp = llm_post(
-                "https://api.anthropic.com/v1/messages",
-                timeout=35.0,
+                "https://api.groq.com/openai/v1/chat/completions",
+                timeout=30.0,
                 headers={
-                    "x-api-key": anthropic_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json"
                 },
                 json={
-                    "model": ANTHROPIC_MODEL,
-                    "max_tokens": 900,
-                    "system": (
-                        "Eres un Médico Veterinario Internista Senior en Chile. "
-                        "A partir del historial longitudinal de consultas de una mascota, devuelve un JSON válido con dos claves exactas: "
-                        "`resumen_clinico` (epicrisis técnica concisa para el veterinario tratante, destacando evolución de peso, recurrencias, fármacos previos y alertas) "
-                        "y `resumen_amigable_tutor` (explicación cálida y sencilla del historial completo para el dueño)."
-                    ),
+                    "model": os.getenv("GROQ_LLM_MODEL", "openai/gpt-oss-120b"),
+                    "temperature": 0.2,
+                    "response_format": {"type": "json_object"},
                     "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "Eres un Médico Veterinario Internista Senior en Chile. "
+                                "A partir del historial longitudinal de consultas de una mascota, devuelve un JSON válido con dos claves exactas: "
+                                "`resumen_clinico` (epicrisis técnica concisa para el veterinario tratante, destacando evolución de peso, recurrencias, fármacos previos y alertas) "
+                                "y `resumen_amigable_tutor` (explicación cálida y sencilla del historial completo para el dueño)."
+                            )
+                        },
                         {
                             "role": "user",
                             "content": f"Paciente: {paciente_display} ({especie_label}, {raza_label}).\nHistorial:\n{hist_prompt}\n\nResponde solo con JSON {{\"resumen_clinico\": \"...\", \"resumen_amigable_tutor\": \"...\"}}."
@@ -1825,15 +1856,9 @@ def resumir_historial_medico_extenso(req: HistorialResumenRequest, db: Session =
                     ]
                 }
             )
-            blocks = resp.json().get("content", [])
-            if blocks and blocks[0].get("text"):
-                raw_txt = blocks[0]["text"].strip()
-                start_idx = raw_txt.find("{")
-                end_idx = raw_txt.rfind("}")
-                if start_idx != -1 and end_idx != -1:
-                    parsed = json.loads(raw_txt[start_idx:end_idx + 1])
-                    resumen_ia_clinico = parsed.get("resumen_clinico") or resumen_ia_clinico
-                    resumen_ia_tutor = parsed.get("resumen_amigable_tutor") or resumen_ia_tutor
+            parsed = json.loads(resp.json()["choices"][0]["message"]["content"])
+            resumen_ia_clinico = parsed.get("resumen_clinico") or resumen_ia_clinico
+            resumen_ia_tutor = parsed.get("resumen_amigable_tutor") or resumen_ia_tutor
         except Exception as err:
             logger.warning(f"[Historial Resumen] Fallback determinista activado: {err}")
 
