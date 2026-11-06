@@ -5334,7 +5334,7 @@ def handle_meta_whatsapp_webhook(
                 )
                 continue
 
-            if step == "AWAITING_TRIAGE_SYMPTOMS" or (step == "MAIN_MENU" and user_text and not action_id):
+            if step == "AWAITING_TRIAGE_SYMPTOMS" or action_id == "FLOW_TRIAGE_SUBMITTED" or (step != "AWAITING_SUB_PET_NAME" and user_text and not action_id):
                 ai_eval = evaluate_whatsapp_triage_ai_sync(user_text)
                 pid = ai_eval["first_aid_protocol_id"]
                 protocol = FIRST_AID_PROTOCOLS.get(pid, FIRST_AID_PROTOCOLS["PREVENTIVO_RUTINA"])
