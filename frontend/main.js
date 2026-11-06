@@ -1037,9 +1037,43 @@ const reviewExamenFisico = document.getElementById('review-examen-fisico');
 const reviewDiagnostico = document.getElementById('review-diagnostico');
 const reviewPlanTerapeutico = document.getElementById('review-plan-terapeutico');
 const reviewProximosPasos = document.getElementById('review-proximos-pasos');
+const reviewResumenAmigable = document.getElementById('review-resumen-amigable');
 const reviewTranscriptRaw = document.getElementById('review-transcript-raw');
 const btnConfirmSoap = document.getElementById('btn-confirm-soap');
 const btnDiscardReview = document.getElementById('btn-discard-review');
+
+// Multi-Paciente Tabs & Dictado por Texto
+const multiPatientTabsBar = document.getElementById('multi-patient-tabs-bar');
+const multiPatientBadge = document.getElementById('multi-patient-badge');
+const multiPatientTabsList = document.getElementById('multi-patient-tabs-list');
+const inputTextDictation = document.getElementById('input-text-dictation');
+const btnDemoMultipatientText = document.getElementById('btn-demo-multipatient-text');
+const btnSubmitTextDictation = document.getElementById('btn-submit-text-dictation');
+
+// Flujo Colaborativo Técnico ➔ Veterinario
+const btnToggleTechIntake = document.getElementById('btn-toggle-tech-intake');
+const collabTechPanel = document.getElementById('collab-tech-panel');
+const btnSubmitTechIntake = document.getElementById('btn-submit-tech-intake');
+const selectedCitaContextCard = document.getElementById('selected-cita-context-card');
+
+// Resumidor de Historial Médico Extenso
+const selectHistoryPatient = document.getElementById('select-history-patient');
+const btnGenerateHistorySummary = document.getElementById('btn-generate-history-summary');
+const modalHistorySummary = document.getElementById('modal-history-summary');
+const historySummaryTitle = document.getElementById('history-summary-title');
+const historySummaryVetText = document.getElementById('history-summary-vet-text');
+const historySummaryTutorText = document.getElementById('history-summary-tutor-text');
+const historySummaryCount = document.getElementById('history-summary-count');
+const historySummaryTimeline = document.getElementById('history-summary-timeline');
+const btnCloseHistorySummary = document.getElementById('btn-close-history-summary');
+const btnCloseHistorySummaryBottom = document.getElementById('btn-close-history-summary-bottom');
+const btnCopyHistorySummary = document.getElementById('btn-copy-history-summary');
+
+let currentMultiPatientFiches = [];
+let currentMultiPatientIndex = 0;
+let cachedCitasContexto = [];
+let lastEventSeq = 0;
+let currentHistorySummaryText = '';
 
 // Tab Agenda
 const kpiCitas = document.getElementById('kpi-citas-count');
@@ -1318,7 +1352,49 @@ function showProcessingError(msg) {
   if (processingStepTitle) processingStepTitle.textContent = 'Procesamiento Detenido';
 }
 
-function populateReviewForm(fiche) {
+function renderMultiPatientTabs() {
+  if (!multiPatientTabsBar || !multiPatientTabsList) return;
+  if (!currentMultiPatientFiches || currentMultiPatientFiches.length <= 1) {
+    multiPatientTabsBar.classList.add('hidden');
+    return;
+  }
+
+  multiPatientTabsBar.classList.remove('hidden');
+  if (multiPatientBadge) {
+    multiPatientBadge.textContent = `🐾 ${currentMultiPatientFiches.length} MASCOTAS DETECTADAS EN 1 GRABACIÓN`;
+  }
+
+  multiPatientTabsList.innerHTML = currentMultiPatientFiches.map((sib, idx) => {
+    const j = sib.json_estructurado || {};
+    const petName = j.paciente_nombre || `Mascota #${idx + 1}`;
+    const esp = j.especie || 'Canino';
+    const icon = esp.toLowerCase().includes('felin') ? '🐱' : '🐶';
+    const isConfirmed = (sib.estado_procesamiento || '').startsWith('CONFIRMED');
+    const statusLabel = isConfirmed ? '✅ Confirmada' : '⏳ Por revisar';
+    const activeClass = idx === currentMultiPatientIndex ? 'active' : '';
+    const doneClass = isConfirmed ? 'confirmed' : '';
+
+    return `
+      <button type="button" class="multi-patient-tab-btn ${activeClass} ${doneClass}" data-mp-index="${idx}">
+        <span>${icon} ${idx + 1}. <strong>${escapeHtml(petName)}</strong> (${escapeHtml(esp)})</span>
+        <small class="mp-tab-status">${statusLabel}</small>
+      </button>
+    `;
+  }).join('');
+
+  multiPatientTabsList.querySelectorAll('.multi-patient-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.getAttribute('data-mp-index'), 10);
+      if (!isNaN(idx) && currentMultiPatientFiches[idx]) {
+        currentMultiPatientIndex = idx;
+        fillSoapFormFields(currentMultiPatientFiches[idx]);
+        renderMultiPatientTabs();
+      }
+    });
+  });
+}
+
+function fillSoapFormFields(fiche) {
   const json = fiche.json_estructurado || {};
   soapFicheIdInput.value = fiche.id || '';
   reviewTutorNombre.value = json.tutor_nombre || 'Por definir';
@@ -1333,11 +1409,27 @@ function populateReviewForm(fiche) {
   reviewDiagnostico.value = json.diagnostico_presuntivo || '';
   reviewPlanTerapeutico.value = json.plan_terapeutico || '';
   reviewProximosPasos.value = json.proximos_pasos || '';
+  if (reviewResumenAmigable) {
+    reviewResumenAmigable.value = json.resumen_amigable_tutor || '';
+  }
   reviewTranscriptRaw.textContent = fiche.texto_transcrito_original || 'Sin transcripción literal.';
 
   setTimeout(() => {
     document.querySelectorAll('.glass-textarea.auto-resize').forEach(autoResizeTextarea);
   }, 50);
+}
+
+function populateReviewForm(fiche) {
+  if (Array.isArray(fiche.sibling_fiches) && fiche.sibling_fiches.length > 1) {
+    currentMultiPatientFiches = fiche.sibling_fiches;
+    currentMultiPatientIndex = 0;
+    showToast(`🐾 Se detectaron ${fiche.sibling_fiches.length} mascotas en la grabación. Se crearon fichas separadas.`, 'success');
+  } else {
+    currentMultiPatientFiches = [fiche];
+    currentMultiPatientIndex = 0;
+  }
+  fillSoapFormFields(currentMultiPatientFiches[currentMultiPatientIndex] || fiche);
+  renderMultiPatientTabs();
 }
 
 function autoResizeTextarea(textarea) {
@@ -1363,6 +1455,7 @@ function buildVetWhatsAppLink(fiche) {
   const diagPresuntivo = (fiche.diagnostico_presuntivo || json.diagnostico_presuntivo || 'En observación clínica').trim();
   const planTerapeutico = (fiche.plan_terapeutico || json.plan_terapeutico || 'Indicaciones según criterio médico veterinario.').trim();
   const proximosPasos = (fiche.proximos_pasos || json.proximos_pasos || 'Según evolución clínica o fecha indicada.').trim();
+  const resumenAmigable = (fiche.resumen_amigable_tutor || json.resumen_amigable_tutor || '').trim();
 
   // Limpia el número telefónico dejando solo dígitos (si empieza con 9 y tiene 9 dígitos, antepón 56)
   const rawPhone = fiche.tutor_telefono || json.tutor_telefono || '';
@@ -1373,13 +1466,15 @@ function buildVetWhatsAppLink(fiche) {
     cleanPhone = '569' + cleanPhone;
   }
 
-  const pdfUrl = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+  const vetQuery = activeVetSlug ? `&vet=${encodeURIComponent(activeVetSlug)}` : '';
+  const pdfUrl = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1${vetQuery}`;
+  const friendlyBlock = resumenAmigable ? `\n💬 *En palabras sencillas:*\n${resumenAmigable}\n` : '';
 
   const msg = 
 `🩺 *CoVet — Resumen de Atención y Receta Médica Oficial*
 
 Hola *${tutorNombre}*, te comparto el resumen clínico y la receta de la consulta de *${pacienteNombre}*:
-
+${friendlyBlock}
 📋 *Diagnóstico Presuntivo:*
 ${diagPresuntivo}
 
@@ -1460,6 +1555,7 @@ formSoapReview.addEventListener('submit', async (e) => {
     diagnostico_presuntivo: reviewDiagnostico.value.trim(),
     plan_terapeutico: reviewPlanTerapeutico.value.trim(),
     proximos_pasos: reviewProximosPasos.value.trim(),
+    resumen_amigable_tutor: reviewResumenAmigable ? reviewResumenAmigable.value.trim() : '',
     consentimiento_tutor_presencial: consentPresencial
   };
 
@@ -1475,7 +1571,17 @@ formSoapReview.addEventListener('submit', async (e) => {
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const resData = await res.json();
-    showToast('Ficha clínica confirmada y sincronizada en PostgreSQL.', 'success');
+    showToast(`Ficha de ${payload.paciente_nombre} confirmada en PostgreSQL.`, 'success');
+
+    // Actualizar estado si forma parte de grupo multi-paciente
+    if (currentMultiPatientFiches && currentMultiPatientFiches.length > 0) {
+      const targetSib = currentMultiPatientFiches.find(s => String(s.id) === String(ficheId));
+      if (targetSib) {
+        targetSib.estado_procesamiento = resData.estado_procesamiento || 'CONFIRMED_AND_SENT';
+        targetSib.json_estructurado = payload;
+      }
+      renderMultiPatientTabs();
+    }
 
     // Preparamos objeto de ficha confirmada para el modal y WhatsApp
     currentSuccessFiche = {
@@ -1486,24 +1592,39 @@ formSoapReview.addEventListener('submit', async (e) => {
       diagnostico_presuntivo: payload.diagnostico_presuntivo,
       plan_terapeutico: payload.plan_terapeutico,
       proximos_pasos: payload.proximos_pasos,
+      resumen_amigable_tutor: payload.resumen_amigable_tutor,
       consentimiento_whatsapp: payload.consentimiento_tutor_presencial,
       consentimiento_tutor_presencial: payload.consentimiento_tutor_presencial,
       json_estructurado: payload
     };
+
+    const vetQuery = activeVetSlug ? `&vet=${encodeURIComponent(activeVetSlug)}` : '';
+    const pdfHref = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1${vetQuery}`;
 
     // Actualizamos campos del modal de éxito
     if (modalSuccessPaciente) modalSuccessPaciente.textContent = payload.paciente_nombre || 'Paciente';
     if (modalSuccessTutor) modalSuccessTutor.textContent = payload.tutor_nombre || 'Tutor';
     if (modalSuccessPhone) modalSuccessPhone.textContent = payload.tutor_telefono || '--';
     if (btnSuccessDownloadPdf) {
-      btnSuccessDownloadPdf.href = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+      btnSuccessDownloadPdf.href = pdfHref;
     }
 
     // Configurar y mostrar enlace a Receta PDF Oficial en la barra de revisión
     const btnOpenReceta = document.getElementById('btn-open-receta-pdf');
     if (btnOpenReceta) {
-      btnOpenReceta.href = `https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${ficheId}/receta-pdf?auto_print=1`;
+      btnOpenReceta.href = pdfHref;
       btnOpenReceta.classList.remove('hidden');
+    }
+
+    // Si hay otra mascota pendiente en esta grabación multi-paciente, avisar en el botón de cierre
+    const nextPendingIdx = currentMultiPatientFiches.findIndex(s => !(s.estado_procesamiento || '').startsWith('CONFIRMED'));
+    if (btnCloseModalSuccess) {
+      if (nextPendingIdx !== -1 && currentMultiPatientFiches.length > 1) {
+        const nextName = currentMultiPatientFiches[nextPendingIdx].json_estructurado?.paciente_nombre || `Mascota #${nextPendingIdx + 1}`;
+        btnCloseModalSuccess.textContent = `👉 Continuar con Ficha de ${nextName} (${nextPendingIdx + 1}/${currentMultiPatientFiches.length})`;
+      } else {
+        btnCloseModalSuccess.textContent = 'Volver a la Consulta';
+      }
     }
 
     // Mostrar modal de éxito (#modal-success) para despacho 1-Clic
@@ -1519,12 +1640,22 @@ formSoapReview.addEventListener('submit', async (e) => {
   }
 });
 
+function closeSuccessModalAndAdvance() {
+  if (modalSuccess) modalSuccess.classList.add('hidden');
+  const nextPendingIdx = currentMultiPatientFiches.findIndex(s => !(s.estado_procesamiento || '').startsWith('CONFIRMED'));
+  if (nextPendingIdx !== -1 && currentMultiPatientFiches.length > 1) {
+    currentMultiPatientIndex = nextPendingIdx;
+    fillSoapFormFields(currentMultiPatientFiches[nextPendingIdx]);
+    renderMultiPatientTabs();
+    showToast(`Revisando siguiente mascota de la grabación: ${currentMultiPatientFiches[nextPendingIdx].json_estructurado?.paciente_nombre || 'Paciente'}`, 'info');
+  } else {
+    switchVibeState('idle');
+  }
+}
+
 // Modal de Éxito Post-Confirmación (#modal-success) Listeners
 if (btnCloseModalSuccess) {
-  btnCloseModalSuccess.addEventListener('click', () => {
-    if (modalSuccess) modalSuccess.classList.add('hidden');
-    switchVibeState('idle');
-  });
+  btnCloseModalSuccess.addEventListener('click', closeSuccessModalAndAdvance);
 }
 
 if (btnSuccessWhatsAppShare) {
@@ -1538,8 +1669,7 @@ if (btnSuccessWhatsAppShare) {
 if (modalSuccess) {
   modalSuccess.addEventListener('click', (e) => {
     if (e.target === modalSuccess) {
-      modalSuccess.classList.add('hidden');
-      switchVibeState('idle');
+      closeSuccessModalAndAdvance();
     }
   });
 }
@@ -1554,21 +1684,171 @@ btnStartRecord.addEventListener('click', startRecording);
 btnStopRecord.addEventListener('click', stopRecordingAndProcess);
 btnCancelRecord.addEventListener('click', cancelRecording);
 
+// Dictado por Texto y Simulador Multi-Paciente (2+ mascotas en un solo dictado)
+if (btnDemoMultipatientText && inputTextDictation) {
+  btnDemoMultipatientText.addEventListener('click', () => {
+    inputTextDictation.value = (
+      "Atención domiciliaria para la tutora Marcela Soto, teléfono +56987654321. " +
+      "Primero revisé a Max, un perro Beagle macho de 5 años y 13.8 kilos: presenta otitis externa bilateral con secreción ceruminosa y prurito hace 4 días; temperatura 38.6 grados, frecuencia cardíaca 96 lpm. Diagnóstico presuntivo otitis externa malassezia. Plan: limpieza ótica con clorhexidina cada 24 horas por 7 días y gotas óticas Otiflex 4 gotas cada 12 horas por 7 días, control en 7 días. " +
+      "Segundo paciente en el mismo domicilio: Luna, gata doméstica pelo corto de 2 años y 3.9 kilos: consulta por vómitos biliosos agudos desde ayer tras comer planta ornamental; temperatura 38.4 grados, mucosas rosadas, abdomen blando. Diagnóstico gastritis aguda leve. Plan: Cerenia 0.4 ml subcutáneo hoy, Omeprazol 4 mg vía oral cada 24 horas por 5 días y dieta blanda gastrointestinal, control en 48 horas."
+    );
+    showToast('Ejemplo con 2 pacientes (Max y Luna) cargado. Pulsa Estructurar Ficha(s) SOAP.', 'info');
+  });
+}
+
+if (btnSubmitTextDictation && inputTextDictation) {
+  btnSubmitTextDictation.addEventListener('click', async () => {
+    const txt = inputTextDictation.value.trim();
+    if (!txt || txt.length < 10) {
+      showToast('Escribe o carga un dictado clínico válido primero.', 'warning');
+      inputTextDictation.focus();
+      return;
+    }
+
+    const citaContextVal = selectCitaContexto && selectCitaContexto.value ? parseInt(selectCitaContexto.value, 10) : null;
+    switchVibeState('processing');
+    resetProcessingUI();
+    setStepDone(stepUpload);
+    setStepDone(stepWhisper);
+    setStepActive(stepClaude, 'Separando pacientes y estructurando SOAP con Claude...', 70);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/covet/structure-text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript_text: txt,
+          cita_id: citaContextVal
+        })
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.detail || `HTTP ${res.status}`);
+      }
+      const ficheData = await res.json();
+      setStepDone(stepClaude);
+      setStepDone(stepReady);
+      processingBarFill.style.width = '100%';
+      setTimeout(() => {
+        populateReviewForm(ficheData);
+        switchVibeState('review');
+      }, 400);
+    } catch (err) {
+      showProcessingError(`Error estructurando dictado: ${err.message}`);
+    }
+  });
+}
+
 
 // ========================================================
-// 5. AGENDA & SINCRONIZACIÓN EN VIVO (REQUERIMIENTO 5)
+// 5. AGENDA, FLUJO COLABORATIVO (TÉCNICO ➔ VET) & SSE EN VIVO
 // ========================================================
-async function loadAppointmentsData() {
+if (btnToggleTechIntake && collabTechPanel) {
+  btnToggleTechIntake.addEventListener('click', () => {
+    collabTechPanel.classList.toggle('hidden');
+  });
+}
+
+if (btnSubmitTechIntake) {
+  btnSubmitTechIntake.addEventListener('click', async () => {
+    const tutorNombre = document.getElementById('tech-tutor-nombre')?.value.trim() || '';
+    const tutorTelefono = document.getElementById('tech-tutor-telefono')?.value.trim() || '';
+    const pacienteNombre = document.getElementById('tech-paciente-nombre')?.value.trim() || '';
+    const especie = document.getElementById('tech-paciente-especie')?.value || 'Canino';
+    const pesoVal = document.getElementById('tech-paciente-peso')?.value || '';
+    const razaEdad = document.getElementById('tech-paciente-raza')?.value.trim() || 'Mestizo';
+    const constantes = document.getElementById('tech-constantes')?.value.trim() || '';
+    const motivo = document.getElementById('tech-motivo')?.value.trim() || '';
+
+    if (!tutorNombre || !tutorTelefono || !pacienteNombre || !motivo) {
+      showToast('Completa Tutor, WhatsApp, Mascota y Motivo de ingreso.', 'warning');
+      return;
+    }
+
+    btnSubmitTechIntake.disabled = true;
+    btnSubmitTechIntake.textContent = '⏳ Sincronizando en vivo...';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/covet/colaborativo/admision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tutor_nombre: tutorNombre,
+          tutor_telefono: tutorTelefono,
+          paciente_nombre: pacienteNombre,
+          especie: especie,
+          raza: razaEdad,
+          edad_aproximada: razaEdad,
+          peso_kg: pesoVal ? parseFloat(pesoVal) : null,
+          constantes_previas: constantes,
+          motivo: motivo,
+          nivel_urgencia: 'MEDIUM',
+          modalidad: 'CLINICA_PRESENCIAL'
+        })
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.detail || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      showToast(`✅ Paciente ${data.paciente_nombre} cargado y sincronizado en la pantalla del Veterinario.`, 'success');
+
+      if (collabTechPanel) collabTechPanel.classList.add('hidden');
+      await loadAppointmentsData(data.cita_id);
+    } catch (err) {
+      showToast(`Error en admisión colaborativa: ${err.message}`, 'error');
+    } finally {
+      btnSubmitTechIntake.disabled = false;
+      btnSubmitTechIntake.textContent = '⚡ Sincronizar en Vivo con Pantalla del Veterinario';
+    }
+  });
+}
+
+function updateSelectedCitaContextPreview() {
+  if (!selectCitaContexto || !selectedCitaContextCard) return;
+  const val = selectCitaContexto.value;
+  if (!val) {
+    selectedCitaContextCard.classList.add('hidden');
+    selectedCitaContextCard.innerHTML = '';
+    return;
+  }
+  const found = cachedCitasContexto.find(c => String(c.cita_id) === String(val));
+  if (!found) {
+    selectedCitaContextCard.classList.add('hidden');
+    return;
+  }
+  const constInfo = found.constantes_previas ? `<div><strong>🩺 Constantes Técnico:</strong> ${escapeHtml(found.constantes_previas)}</div>` : '';
+  selectedCitaContextCard.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.4rem;">
+      <strong>🐾 Pre-cargado: ${escapeHtml(found.paciente_nombre)} (${escapeHtml(found.especie)} · ${escapeHtml(found.raza)})</strong>
+      <span class="badge-tag green" style="font-size:0.72rem;">✓ Sincronizado con Recepción</span>
+    </div>
+    <div style="font-size:0.83rem; color:var(--text-dim); margin-top:0.25rem;">
+      👤 Tutor: <strong>${escapeHtml(found.tutor_nombre)}</strong> (${escapeHtml(found.tutor_telefono || 'Sin tel')}) • Peso: <strong>${found.peso_kg ? found.peso_kg + ' kg' : 'Por pesar'}</strong>
+    </div>
+    <div style="font-size:0.83rem; margin-top:0.2rem;">📋 <strong>Motivo:</strong> ${escapeHtml(found.motivo)}</div>
+    ${constInfo}
+  `;
+  selectedCitaContextCard.classList.remove('hidden');
+}
+
+if (selectCitaContexto) {
+  selectCitaContexto.addEventListener('change', updateSelectedCitaContextPreview);
+}
+
+async function loadAppointmentsData(autoSelectCitaId = null) {
   try {
-    const [citasRes, pacientesRes, tutoresRes] = await Promise.all([
+    const [citasRes, pacientesRes, tutoresRes, ctxRes] = await Promise.all([
       fetch(`${API_BASE}/api/citas`).catch(() => null),
       fetch(`${API_BASE}/api/pacientes`).catch(() => null),
-      fetch(`${API_BASE}/api/tutores`).catch(() => null)
+      fetch(`${API_BASE}/api/tutores`).catch(() => null),
+      fetch(`${API_BASE}/api/v1/covet/citas/contexto`).catch(() => null)
     ]);
 
     const citas = citasRes && citasRes.ok ? await citasRes.json() : [];
     const pacientes = pacientesRes && pacientesRes.ok ? await pacientesRes.json() : [];
     const tutores = tutoresRes && tutoresRes.ok ? await tutoresRes.json() : [];
+    cachedCitasContexto = ctxRes && ctxRes.ok ? await ctxRes.json() : [];
 
     if (kpiCitas) kpiCitas.textContent = citas.length;
     if (kpiPacientes) kpiPacientes.textContent = pacientes.length;
@@ -1576,7 +1856,7 @@ async function loadAppointmentsData() {
     if (tabCitasCounter) tabCitasCounter.textContent = citas.length;
 
     renderAppointmentsList(citas, pacientes);
-    populateAppointmentContextSelector(citas, pacientes);
+    populateAppointmentContextSelector(citas, pacientes, autoSelectCitaId);
   } catch (err) {
     console.error('Error cargando citas en agenda:', err);
   }
@@ -1639,8 +1919,9 @@ function renderAppointmentsList(citas, pacientes) {
   }).join('');
 }
 
-function populateAppointmentContextSelector(citas, pacientes) {
+function populateAppointmentContextSelector(citas, pacientes, autoSelectCitaId = null) {
   if (!selectCitaContexto) return;
+  const previousVal = autoSelectCitaId ? String(autoSelectCitaId) : selectCitaContexto.value;
 
   const pacientesMap = new Map();
   pacientes.forEach(p => pacientesMap.set(p.id, p));
@@ -1655,10 +1936,69 @@ function populateAppointmentContextSelector(citas, pacientes) {
 
     const opt = document.createElement('option');
     opt.value = cita.id;
-    opt.textContent = `Cita #${cita.id} [${urgency}] [${modalidad}] — ${petName} (${dateStr}: ${cita.motivo.slice(0, 28)})`;
+    opt.textContent = `Cita #${cita.id} [${urgency}] [${modalidad}] — ${petName} (${dateStr}: ${cita.motivo.slice(0, 34)})`;
     selectCitaContexto.appendChild(opt);
   });
+
+  if (previousVal && Array.from(selectCitaContexto.options).some(o => String(o.value) === String(previousVal))) {
+    selectCitaContexto.value = String(previousVal);
+  }
+  updateSelectedCitaContextPreview();
 }
+
+// Sincronización en Tiempo Real (SSE + Polling Delta) para Flujo Colaborativo Técnico ➔ Veterinario
+function handleRealtimeClinicalEvent(evt) {
+  if (!evt || !evt.event_type) return;
+  if (evt.seq && evt.seq > lastEventSeq) {
+    lastEventSeq = evt.seq;
+  }
+  if (evt.event_type === 'COLLAB_INTAKE_READY' || evt.event_type === 'APPOINTMENT_CREATED') {
+    const d = evt.data || {};
+    const pet = d.paciente_nombre || 'Nuevo Paciente';
+    showToast(`🔔 Sincronización Colaborativa: ${pet} ingresado por Recepción/Técnico.`, 'info');
+    loadAppointmentsData(d.cita_id || null);
+  } else if (evt.event_type === 'FICHE_CONFIRMED') {
+    loadFichesHistory();
+  }
+}
+
+function initCollaborativeRealtimeSync() {
+  if (window.EventSource) {
+    try {
+      const es = new EventSource(`${API_BASE}/api/v1/covet/events/stream?since_seq=${lastEventSeq}`);
+      es.onmessage = (msg) => {
+        try {
+          const parsed = JSON.parse(msg.data);
+          if (parsed.event_type === 'CONNECTED' && parsed.seq) {
+            lastEventSeq = parsed.seq;
+          } else {
+            handleRealtimeClinicalEvent(parsed);
+          }
+        } catch (_) {}
+      };
+      es.onerror = () => {
+        es.close();
+      };
+    } catch (_) {}
+  }
+
+  // Fallback Polling Delta cada 12 segundos para redes móviles o proxies restrictivos
+  setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/covet/events/recent?since_seq=${lastEventSeq}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (Array.isArray(data.events) && data.events.length > 0) {
+        data.events.forEach(handleRealtimeClinicalEvent);
+      }
+      if (data.current_seq && data.current_seq > lastEventSeq) {
+        lastEventSeq = data.current_seq;
+      }
+    } catch (_) {}
+  }, 12000);
+}
+
+initCollaborativeRealtimeSync();
 
 // Agendamiento Manual Rápido en Agenda
 if (appointmentForm) {
@@ -1727,8 +2067,86 @@ if (btnRefresh) {
 
 
 // ========================================================
-// 6. HISTORIAL DE FICHAS (TAB 3 VETERINARIO)
+// 6. HISTORIAL DE FICHAS & RESUMIDOR DE HISTORIAL EXTENSO (TAB 3)
 // ========================================================
+async function openPatientHistorySummaryModal(pacienteNombre, pacienteId = null) {
+  if (!modalHistorySummary) return;
+  modalHistorySummary.classList.remove('hidden');
+  if (historySummaryTitle) historySummaryTitle.textContent = `Resumen Longitudinal — ${pacienteNombre || 'Paciente'}`;
+  if (historySummaryVetText) historySummaryVetText.textContent = '⏳ Analizando y resumiendo historial clínico con IA...';
+  if (historySummaryTutorText) historySummaryTutorText.textContent = '⏳ Generando versión en lenguaje amigable para el tutor...';
+  if (historySummaryTimeline) historySummaryTimeline.innerHTML = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/historial/resumir`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        paciente_id: pacienteId ? parseInt(pacienteId, 10) : null,
+        paciente_nombre: pacienteNombre
+      })
+    });
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.detail || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    if (historySummaryTitle) {
+      historySummaryTitle.textContent = `Epicrisis Longitudinal — ${data.paciente_nombre} (${data.especie} · ${data.raza})`;
+    }
+    if (historySummaryVetText) historySummaryVetText.textContent = data.resumen_clinico_veterinario || '--';
+    if (historySummaryTutorText) historySummaryTutorText.textContent = data.resumen_amigable_tutor || '--';
+    if (historySummaryCount) historySummaryCount.textContent = data.total_consultas || 0;
+
+    if (historySummaryTimeline && Array.isArray(data.cronologia)) {
+      historySummaryTimeline.innerHTML = data.cronologia.map(c => `
+        <div style="padding:0.65rem 0.85rem; background:rgba(15,23,42,0.04); border:1px solid var(--border-subtle,#cbd5e1); border-radius:6px; font-size:0.84rem;">
+          <div style="font-weight:700; color:var(--teal-primary,#0D9488);">Consulta #${c.consulta_num} (${escapeHtml(c.fecha)}) • Folio ${escapeHtml(c.folio)} ${c.peso_kg ? '• Peso: ' + c.peso_kg + ' kg' : ''}</div>
+          <div><strong>Dx:</strong> ${escapeHtml(c.diagnostico)}</div>
+          <div><strong>Plan:</strong> ${escapeHtml(c.tratamiento)}</div>
+        </div>
+      `).join('');
+    }
+
+    currentHistorySummaryText = (
+      `📋 EPICRISIS CLÍNICA COVET — ${data.paciente_nombre} (${data.especie})\n` +
+      `Tutor: ${data.tutor_nombre} | Consultas: ${data.total_consultas}\n\n` +
+      `🩺 RESUMEN VETERINARIO:\n${data.resumen_clinico_veterinario}\n\n` +
+      `💬 RESUMEN AMIGABLE PARA EL TUTOR:\n${data.resumen_amigable_tutor}`
+    );
+  } catch (err) {
+    if (historySummaryVetText) historySummaryVetText.textContent = `No se pudo resumir el historial: ${err.message}`;
+    if (historySummaryTutorText) historySummaryTutorText.textContent = '--';
+  }
+}
+
+if (btnGenerateHistorySummary && selectHistoryPatient) {
+  btnGenerateHistorySummary.addEventListener('click', () => {
+    const val = selectHistoryPatient.value;
+    if (!val) {
+      showToast('Selecciona un paciente del listado primero.', 'warning');
+      return;
+    }
+    openPatientHistorySummaryModal(val, null);
+  });
+}
+
+[btnCloseHistorySummary, btnCloseHistorySummaryBottom].forEach(btn => {
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (modalHistorySummary) modalHistorySummary.classList.add('hidden');
+    });
+  }
+});
+
+if (btnCopyHistorySummary) {
+  btnCopyHistorySummary.addEventListener('click', () => {
+    if (currentHistorySummaryText) {
+      copyTextToClipboard(currentHistorySummaryText, null);
+    }
+  });
+}
+
 async function loadFichesHistory() {
   if (!fichesHistoryList) return;
 
@@ -1750,11 +2168,30 @@ async function loadFichesHistory() {
       return;
     }
 
+    // Poblar selector de pacientes únicos para el resumidor de historiales extensos
+    if (selectHistoryPatient) {
+      const uniqueNames = new Set();
+      fiches.forEach(f => {
+        const pName = (f.json_estructurado?.paciente_nombre || '').trim();
+        if (pName) uniqueNames.add(pName);
+      });
+      selectHistoryPatient.innerHTML = '<option value="">-- Selecciona un paciente del historial --</option>';
+      Array.from(uniqueNames).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = `🐾 ${name}`;
+        selectHistoryPatient.appendChild(opt);
+      });
+    }
+
+    const vetQuery = activeVetSlug ? `&vet=${encodeURIComponent(activeVetSlug)}` : '';
+
     fichesHistoryList.innerHTML = fiches.map(fiche => {
       const json = fiche.json_estructurado || {};
       const petName = json.paciente_nombre || fiche.paciente_nombre || 'Paciente';
       const tutorName = json.tutor_nombre || fiche.tutor_nombre || 'Tutor';
       const diag = json.diagnostico_presuntivo || fiche.diagnostico_presuntivo || 'Sin diagnóstico registrado';
+      const friendly = json.resumen_amigable_tutor || '';
       const createdDate = fiche.fecha_creacion ? new Date(fiche.fecha_creacion).toLocaleString('es-CL') : 'Reciente';
 
       let statusBadge = '<span class="cita-status-tag confirmed">✓ CONFIRMADA</span>';
@@ -1763,6 +2200,10 @@ async function loadFichesHistory() {
       } else if (fiche.estado_procesamiento === 'CONFIRMED_N8N_PENDING') {
         statusBadge = '<span class="cita-status-tag hold">⚠️ n8n Pendiente</span>';
       }
+
+      const friendlyLine = friendly
+        ? `<div style="font-size:0.81rem; color:var(--text-dim); margin-top:0.2rem;">💬 <em>${escapeHtml(friendly.slice(0, 120))}${friendly.length > 120 ? '...' : ''}</em></div>`
+        : '';
 
       return `
         <div class="fiche-history-card">
@@ -1773,13 +2214,17 @@ async function loadFichesHistory() {
             ${statusBadge}
           </div>
           <div class="cita-motivo"><strong>Dx:</strong> ${escapeHtml(diag)}</div>
+          ${friendlyLine}
           <div class="cita-time" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.4rem; flex-wrap:wrap; gap:0.5rem;">
             <span>📅 ${createdDate} • ID: ${fiche.id.slice(0, 8)}...</span>
             <div class="history-card-actions">
+              <button type="button" class="btn-action-small btn-history-summary" data-pet-name="${escapeHtml(petName)}" data-pet-id="${fiche.paciente_id || ''}" style="font-size:0.78rem; padding:0.25rem 0.6rem; border-radius:6px; cursor:pointer; background:rgba(37,99,235,0.1); border:1px solid #3b82f6; color:#2563eb; font-weight:700;">
+                🧠 Resumen Historial
+              </button>
               <button type="button" class="btn-history-wa" data-fiche-id="${fiche.id}" title="Reenviar Receta por WhatsApp (1-Clic)">
                 📲 WhatsApp
               </button>
-              <a href="https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${fiche.id}/receta-pdf?auto_print=1" target="_blank" class="btn-action-small" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.25rem 0.65rem; background:rgba(13,148,136,0.12); border:1px solid var(--teal-primary,#0D9488); border-radius:6px; color:var(--teal-primary,#0D9488); font-weight:700;">
+              <a href="https://vet-api.142.132.233.38.sslip.io/api/v1/covet/fiches/${fiche.id}/receta-pdf?auto_print=1${vetQuery}" target="_blank" class="btn-action-small" style="text-decoration:none; display:inline-flex; align-items:center; gap:0.35rem; font-size:0.8rem; padding:0.25rem 0.65rem; background:rgba(13,148,136,0.12); border:1px solid var(--teal-primary,#0D9488); border-radius:6px; color:var(--teal-primary,#0D9488); font-weight:700;">
                 📄 Receta PDF
               </a>
             </div>
@@ -1787,6 +2232,16 @@ async function loadFichesHistory() {
         </div>
       `;
     }).join('');
+
+    // Listener para botones de Resumen Longitudinal por paciente
+    fichesHistoryList.querySelectorAll('.btn-history-summary').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const pName = btn.getAttribute('data-pet-name');
+        const pId = btn.getAttribute('data-pet-id');
+        openPatientHistorySummaryModal(pName, pId);
+      });
+    });
 
     // Listener para botones de WhatsApp rápido en el historial
     fichesHistoryList.querySelectorAll('.btn-history-wa').forEach(btn => {
@@ -2158,6 +2613,7 @@ const brandInputRut = document.getElementById('brand-input-rut');
 const brandInputEmail = document.getElementById('brand-input-email');
 const brandInputPhone = document.getElementById('brand-input-phone');
 const brandInputWelcome = document.getElementById('brand-input-welcome');
+const brandInputLogo = document.getElementById('brand-input-logo');
 const btnSaveBranding = document.getElementById('btn-save-branding');
 const btnClearBranding = document.getElementById('btn-clear-branding');
 const btnLoadBranding = document.getElementById('btn-load-branding');
@@ -2304,6 +2760,7 @@ async function loadAdminBrandingList() {
         if (brandInputEmail) brandInputEmail.value = b.email_privacidad || '';
         if (brandInputPhone) brandInputPhone.value = b.whatsapp_contacto || '';
         if (brandInputWelcome) brandInputWelcome.value = b.mensaje_bienvenida || '';
+        if (brandInputLogo) brandInputLogo.value = b.logo_url || '';
         if (b.color_primario) setSelectedBrandColor(b.color_primario);
 
         document.querySelectorAll('.branding-chip').forEach(c => c.classList.remove('active'));
@@ -2344,6 +2801,7 @@ async function handleLoadExistingBranding() {
     if (brandInputEmail) brandInputEmail.value = data.email_privacidad || '';
     if (brandInputPhone) brandInputPhone.value = data.whatsapp_contacto || '';
     if (brandInputWelcome) brandInputWelcome.value = data.mensaje_bienvenida || '';
+    if (brandInputLogo) brandInputLogo.value = data.logo_url || '';
     if (data.color_primario) setSelectedBrandColor(data.color_primario);
 
     updateBrandOutputDisplay(rawSlug, data);
@@ -2376,6 +2834,7 @@ async function handleSaveBranding() {
 
   const primaryColor = getSelectedBrandColor();
   const secondaryColor = SECONDARY_COLOR_MAP[primaryColor] || '#0F766E';
+  const rawLogo = (brandInputLogo ? brandInputLogo.value : '').trim();
 
   const payload = {
     nombre_fantasia: name,
@@ -2384,6 +2843,7 @@ async function handleSaveBranding() {
     email_privacidad: (brandInputEmail ? brandInputEmail.value : '').trim() || null,
     color_primario: primaryColor,
     color_secundario: secondaryColor,
+    logo_url: rawLogo.startsWith('https://') ? rawLogo : null,
     whatsapp_contacto: (brandInputPhone ? brandInputPhone.value : '').trim() || null,
     mensaje_bienvenida: (brandInputWelcome ? brandInputWelcome.value : '').trim() || 'Atención médica veterinaria con trazabilidad y privacidad garantizada.',
     plan: 'PRO_WHITE_LABEL',

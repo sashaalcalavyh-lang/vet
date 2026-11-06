@@ -4241,6 +4241,189 @@ body[data-active-view="client"] .theme-toggle-btn {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+  flex-wrap: wrap;
 }
+
+/* ========================================================
+   FLUJO COLABORATIVO EN VIVO, MULTI-PACIENTE Y RESUMIDOR IA
+   ======================================================== */
+.collab-sync-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(13, 148, 136, 0.08);
+  border: 1px solid rgba(13, 148, 136, 0.3);
+  border-radius: 10px;
+}
+
+.collab-sync-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--teal-primary, #0D9488);
+}
+
+.collab-live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  display: inline-block;
+}
+
+.btn-toggle-tech-intake {
+  background: var(--teal-primary, #0D9488);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.48rem 0.9rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.collab-tech-panel {
+  background: rgba(15, 23, 42, 0.03);
+  border: 1.5px dashed var(--teal-primary, #0D9488);
+  border-radius: 12px;
+  padding: 1.15rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.collab-tech-header {
+  margin-bottom: 0.85rem;
+}
+
+.collab-tech-header p {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: 0.2rem 0 0 0;
+}
+
+.selected-cita-context-card {
+  margin-top: 0.65rem;
+  padding: 0.75rem 0.95rem;
+  background: rgba(13, 148, 136, 0.07);
+  border-left: 3px solid var(--teal-primary, #0D9488);
+  border-radius: 8px;
+  text-align: left;
+  font-size: 0.85rem;
+}
+
+.text-dictation-details {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(15, 23, 42, 0.03);
+  border: 1px solid var(--border-subtle, #cbd5e1);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.text-dictation-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--teal-primary, #0D9488);
+}
+
+.text-dictation-body {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.text-dictation-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.multi-patient-tabs-bar {
+  margin-bottom: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1.5px solid var(--teal-primary, #0D9488);
+}
+
+.multi-patient-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.multi-patient-tabs-list {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.multi-patient-tab-btn {
+  flex: 1 1 200px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-subtle, #cbd5e1);
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-main, #0f172a);
+  cursor: pointer;
+  font-size: 0.86rem;
+  transition: all 0.2s ease;
+}
+
+.multi-patient-tab-btn.active {
+  border-color: var(--teal-primary, #0D9488);
+  background: rgba(13, 148, 136, 0.12);
+  box-shadow: 0 2px 8px rgba(13, 148, 136, 0.18);
+}
+
+.multi-patient-tab-btn.confirmed {
+  border-color: #10B981;
+}
+
+.mp-tab-status {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--teal-primary, #0D9488);
+}
+
+.history-summarizer-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: rgba(13, 148, 136, 0.06);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  border-radius: 10px;
+}
+
+.summarizer-select-group {
+  flex: 1 1 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.summarizer-select-group label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
 
 

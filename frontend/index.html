@@ -411,12 +411,79 @@
                 <p>Habla con naturalidad durante la consulta. La IA transcribirá con Groq Whisper y estructurará el estándar SOAP con Claude.</p>
               </div>
 
+              <!-- Barra de Sincronización Colaborativa Técnico ➔ Veterinario en Tiempo Real -->
+              <div class="collab-sync-bar" id="collab-sync-bar">
+                <div class="collab-sync-status">
+                  <span class="collab-live-dot" id="collab-live-dot"></span>
+                  <span id="collab-sync-label">Sincronización Colaborativa en Vivo (Técnico ➔ Vet)</span>
+                </div>
+                <button type="button" class="btn-toggle-tech-intake" id="btn-toggle-tech-intake">
+                  🧑‍🔬 Modo Técnico / Ingreso Inicial
+                </button>
+              </div>
+
+              <!-- Panel Desplegable: Carga Inicial por Técnico / Recepción -->
+              <div class="collab-tech-panel hidden" id="collab-tech-panel">
+                <div class="collab-tech-header">
+                  <strong>🧑‍🔬 Admisión Rápida por Técnico Veterinario</strong>
+                  <p>Carga los datos iniciales y constantes vitales; aparecerán al instante en la pantalla del Médico Veterinario.</p>
+                </div>
+                <div class="form-grid-2">
+                  <div class="input-group">
+                    <label for="tech-tutor-nombre">Nombre del Tutor *</label>
+                    <input type="text" id="tech-tutor-nombre" placeholder="Ej: Roberto Gómez" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="tech-tutor-telefono">WhatsApp Tutor *</label>
+                    <input type="tel" id="tech-tutor-telefono" placeholder="+56991234567" class="glass-input font-mono">
+                  </div>
+                </div>
+                <div class="form-grid-3" style="margin-top: 0.65rem;">
+                  <div class="input-group">
+                    <label for="tech-paciente-nombre">Mascota *</label>
+                    <input type="text" id="tech-paciente-nombre" placeholder="Ej: Thor" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="tech-paciente-especie">Especie</label>
+                    <select id="tech-paciente-especie" class="glass-input">
+                      <option value="Canino">Canino 🐶</option>
+                      <option value="Felino">Felino 🐱</option>
+                      <option value="Exótico">Exótico 🦜</option>
+                    </select>
+                  </div>
+                  <div class="input-group">
+                    <label for="tech-paciente-peso">Peso (kg)</label>
+                    <input type="number" id="tech-paciente-peso" step="0.1" min="0" placeholder="Ej: 18.4" class="glass-input">
+                  </div>
+                </div>
+                <div class="form-grid-2" style="margin-top: 0.65rem;">
+                  <div class="input-group">
+                    <label for="tech-paciente-raza">Raza / Edad</label>
+                    <input type="text" id="tech-paciente-raza" placeholder="Ej: Pastor Alemán, 4 años" class="glass-input">
+                  </div>
+                  <div class="input-group">
+                    <label for="tech-constantes">Constantes Previas (T°, FC, FR, Mucosas)</label>
+                    <input type="text" id="tech-constantes" placeholder="Ej: T° 38.6°C, FC 92 lpm, mucosas rosadas" class="glass-input">
+                  </div>
+                </div>
+                <div class="input-group" style="margin-top: 0.65rem;">
+                  <label for="tech-motivo">Motivo de Ingreso / Triaje Inicial *</label>
+                  <input type="text" id="tech-motivo" placeholder="Ej: Otitis bilateral y sacudida de cabeza hace 3 días" class="glass-input">
+                </div>
+                <div class="collab-tech-actions" style="margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                  <button type="button" class="btn-action-primary" id="btn-submit-tech-intake" style="flex: 1;">
+                    ⚡ Sincronizar en Vivo con Pantalla del Veterinario
+                  </button>
+                </div>
+              </div>
+
               <!-- Selector Opcional de Cita Previa -->
               <div class="appointment-selector-box">
-                <label for="select-cita-contexto">Vincular a cita existente (opcional):</label>
+                <label for="select-cita-contexto">Vincular a cita o admisión de técnico (pre-carga datos en SOAP):</label>
                 <select id="select-cita-contexto" class="custom-select">
                   <option value="">-- Consulta espontánea / Sin cita previa --</option>
                 </select>
+                <div class="selected-cita-context-card hidden" id="selected-cita-context-card"></div>
               </div>
 
               <!-- Botón Gigante Táctil de Micrófono -->
@@ -430,9 +497,25 @@
                     </svg>
                   </div>
                   <span class="mic-btn-label">Tocar para Dictar Ficha SOAP</span>
-                  <span class="mic-btn-hint">Graba hasta 90 seg de dictado</span>
+                  <span class="mic-btn-hint">Soporta 1 o múltiples mascotas en una sola grabación</span>
                 </button>
               </div>
+
+              <!-- Dictado Escrito / Simulador Multi-Paciente -->
+              <details class="text-dictation-details" id="text-dictation-details">
+                <summary>⌨️ Dictado por Texto o Prueba Multi-Paciente (2+ mascotas en 1 sesión)</summary>
+                <div class="text-dictation-body">
+                  <textarea id="input-text-dictation" rows="3" class="glass-textarea" placeholder="Escribe o pega el dictado de 1 o varias mascotas atendidas en la misma visita..."></textarea>
+                  <div class="text-dictation-actions">
+                    <button type="button" class="btn-outline-small" id="btn-demo-multipatient-text">
+                      🐾 Cargar Ejemplo 2 Mascotas (Max + Luna)
+                    </button>
+                    <button type="button" class="btn-action-primary" id="btn-submit-text-dictation">
+                      ✨ Estructurar Ficha(s) SOAP con IA
+                    </button>
+                  </div>
+                </div>
+              </details>
 
               <!-- Tips Clínicos -->
               <div class="clinical-tips-grid">
@@ -544,6 +627,15 @@
                 </div>
               </div>
 
+              <!-- Barra de Separación de Múltiples Pacientes (Visible cuando se detectan 2+ mascotas en el mismo audio) -->
+              <div class="multi-patient-tabs-bar glass-panel hidden" id="multi-patient-tabs-bar">
+                <div class="multi-patient-header">
+                  <span class="badge-tag green" id="multi-patient-badge">🐾 2 MASCOTAS DETECTADAS EN 1 GRABACIÓN</span>
+                  <small>Selecciona cada mascota para revisar y confirmar su ficha SOAP independiente:</small>
+                </div>
+                <div class="multi-patient-tabs-list" id="multi-patient-tabs-list"></div>
+              </div>
+
               <form id="form-soap-review" class="soap-review-form">
                 <input type="hidden" id="soap-fiche-id" value="">
 
@@ -629,6 +721,10 @@
                     <div class="soap-field-group">
                       <div class="soap-tag next-tag">📅 Próximos Pasos & Control</div>
                       <textarea id="review-proximos-pasos" rows="2" class="glass-textarea auto-resize" placeholder="Fecha de control o vacunas..."></textarea>
+                    </div>
+                    <div class="soap-field-group">
+                      <div class="soap-tag s-tag" style="background: rgba(13, 148, 136, 0.16); color: var(--teal-primary, #0D9488);">💬 Resumen Amigable para el Tutor (En Lenguaje Sencillo sin Tecnicismos)</div>
+                      <textarea id="review-resumen-amigable" rows="2" class="glass-textarea auto-resize" placeholder="Explicación cálida y en palabras sencillas para el dueño sobre el estado y cuidados de su mascota..."></textarea>
                     </div>
                   </div>
                 </section>
@@ -779,10 +875,23 @@
             <div class="panel-header flex-between">
               <div>
                 <h2>📋 Fichas Clínicas Generadas</h2>
-                <p>Registro histórico de atenciones SOAP y estado de despacho WhatsApp</p>
+                <p>Registro histórico de atenciones SOAP, estado de despacho WhatsApp y Epicrisis Longitudinal con IA</p>
               </div>
               <button class="btn-refresh" id="btn-refresh-fiches" title="Refrescar fichas">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+
+            <!-- Barra de Resumidor de Historial Médico Extenso (IA) -->
+            <div class="history-summarizer-bar" id="history-summarizer-bar">
+              <div class="summarizer-select-group">
+                <label for="select-history-patient">🧠 Resumir Historial Médico Extenso por Paciente:</label>
+                <select id="select-history-patient" class="custom-select">
+                  <option value="">-- Selecciona un paciente del historial --</option>
+                </select>
+              </div>
+              <button type="button" class="btn-action-primary" id="btn-generate-history-summary">
+                📋 Generar Resumen Longitudinal (IA)
               </button>
             </div>
 
@@ -1060,6 +1169,9 @@
               <label for="brand-input-welcome" class="brand-subheading">Mensaje de Bienvenida / Slogan:</label>
               <input type="text" id="brand-input-welcome" class="clinical-input" placeholder="Bienvenido a la consulta veterinaria personalizada con trazabilidad y privacidad garantizada." />
               <small class="brand-field-hint">Aparece en la pantalla de bienvenida y consentimiento del tutor.</small>
+              <label for="brand-input-logo" class="brand-subheading" style="margin-top: 0.65rem; display: block;">URL del Logo de la Clínica (HTTPS):</label>
+              <input type="url" id="brand-input-logo" class="clinical-input" placeholder="https://vet.142.132.233.38.sslip.io/favicon.svg" />
+              <small class="brand-field-hint">Se inyecta en la cabecera de la Receta Médica Oficial PDF y en la vista del tutor.</small>
             </div>
           </div>
 
@@ -1314,6 +1426,41 @@
         <div class="modal-success-footer">
           <button type="button" class="btn-modal-close-success" id="btn-close-modal-success">
             Volver a la Consulta
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- MODAL DE RESUMEN DE HISTORIAL MÉDICO EXTENSO (EPICRISIS)-->
+    <!-- ======================================================= -->
+    <div class="modal-backdrop hidden" id="modal-history-summary">
+      <div class="glass-panel modal-privacy-card">
+        <div class="modal-privacy-header">
+          <div class="privacy-icon-pill">🧠 EPICRISIS LONGITUDINAL IA</div>
+          <h3 id="history-summary-title">Resumen de Historial Médico Extenso</h3>
+          <button type="button" class="btn-close-modal" id="btn-close-history-summary" title="Cerrar modal">&times;</button>
+        </div>
+        <div class="modal-privacy-body" id="history-summary-body">
+          <div class="privacy-item">
+            <strong>🩺 Epicrisis Clínica Consolidada (Para el Veterinario):</strong>
+            <p id="history-summary-vet-text">Generando síntesis longitudinal...</p>
+          </div>
+          <div class="privacy-item" style="background: rgba(13, 148, 136, 0.08); border-left: 3px solid var(--teal-primary, #0D9488); padding: 0.85rem; border-radius: 8px;">
+            <strong>💬 Resumen Amigable del Historial (En Lenguaje Sencillo para el Tutor):</strong>
+            <p id="history-summary-tutor-text">--</p>
+          </div>
+          <div class="privacy-item">
+            <strong>📅 Cronología de Atenciones Registradas (<span id="history-summary-count">0</span>):</strong>
+            <div id="history-summary-timeline" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;"></div>
+          </div>
+        </div>
+        <div class="modal-privacy-footer" style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+          <button type="button" class="btn-action-primary" id="btn-copy-history-summary" style="flex: 1;">
+            📋 Copiar Resumen Completo
+          </button>
+          <button type="button" class="btn-modal-understand" id="btn-close-history-summary-bottom" style="flex: 1;">
+            Cerrar
           </button>
         </div>
       </div>

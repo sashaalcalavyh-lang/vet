@@ -16,10 +16,11 @@ import threading
 import json
 import gzip
 import subprocess
+import asyncio
 from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -61,6 +62,35 @@ Base = declarative_base()
 
 # Límite de audio aceptado (Groq Whisper admite hasta 25 MB por archivo)
 MAX_AUDIO_BYTES = int(os.getenv("MAX_AUDIO_BYTES", str(25 * 1024 * 1024)))
+
+# Bus de Eventos Clínicos en Tiempo Real (SSE + Polling Delta para Flujo Colaborativo Técnico -> Veterinario)
+_events_lock = threading.Lock()
+_events_seq = 0
+_recent_events: List[Dict[str, Any]] = []
+
+
+def broadcast_clinical_event(event_type: str, data: Dict[str, Any]) -> int:
+    """Publica un evento clínico en memoria para sincronizar pantallas de Técnico y Veterinario en vivo."""
+    global _events_seq
+    with _events_lock:
+        _events_seq += 1
+        evt = {
+            "seq": _events_seq,
+            "event_type": event_type,
+            "data": data,
+            "timestamp": datetime.datetime.utcnow().isoformat()
+        }
+        _recent_events.append(evt)
+        if len(_recent_events) > 120:
+            del _recent_events[:-120]
+        return _events_seq
+
+
+def get_events_since(since_seq: int) -> Tuple[int, List[Dict[str, Any]]]:
+    """Devuelve el número de secuencia actual y todos los eventos posteriores a since_seq."""
+    with _events_lock:
+        matching = [e for e in _recent_events if e["seq"] > since_seq]
+        return _events_seq, matching
 
 # -------------------------------------------------------------
 # 0. Utilidades transversales: LLM con backoff, seguridad admin, pepper HMAC
@@ -610,10 +640,236 @@ class SOAPFicheSchema(BaseModel):
         ...,
         description="Fecha o plazo de próximo control, vacunas o exámenes complementarios sugeridos"
     )
+    resumen_amigable_tutor: Optional[str] = Field(
+        default="",
+        description="Explicación cálida, empática y en lenguaje sencillo (sin tecnicismos médicos complejos) dirigida al dueño/tutor explicando qué tiene su mascota y cómo cuidarla en casa"
+    )
     consentimiento_tutor_presencial: Optional[bool] = Field(
         default=True,
         description="Confirmación del veterinario de que el tutor autorizó en consulta el registro clínico digital y envío de su receta por WhatsApp (Ley 21.719)"
     )
+
+
+class SOAPMultiFicheEnvelope(BaseModel):
+    fichas: List[SOAPFicheSchema] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Lista de fichas clínicas SOAP extraídas del dictado. "
+            "Si el veterinario atendió a una sola mascota, devuelve una lista con 1 elemento. "
+            "Si atendió a 2 o más mascotas en la misma grabación, devuelve un elemento SOAP separado e independiente por cada mascota "
+            "(compartiendo tutor_nombre y tutor_telefono si pertenecen a la misma familia)."
+        )
+    )
+
+
+def ensure_friendly_tutor_summary(soap: SOAPFicheSchema) -> SOAPFicheSchema:
+    """Garantiza que toda ficha tenga un resumen amigable y empático en lenguaje sencillo para el tutor."""
+    raw = (soap.resumen_amigable_tutor or "").strip()
+    if not raw or raw.lower().startswith("no especificado"):
+        soap.resumen_amigable_tutor = (
+            f"Hoy evaluamos a {soap.paciente_nombre} ({soap.especie}). "
+            f"En términos sencillos, presenta un cuadro compatible con: {soap.diagnostico_presuntivo}. "
+            f"Para su recuperación en casa dejamos indicado: {soap.plan_terapeutico}. "
+            f"Recomendación de seguimiento: {soap.proximos_pasos}."
+        )
+    return soap
+
+
+def build_cita_context_prompt(db: Session, cita_id: Optional[int]) -> Tuple[str, Dict[str, Any]]:
+    """Recupera los datos cargados previamente por el técnico/recepción en una cita para enriquecer el dictado."""
+    if not cita_id:
+        return "", {}
+    cita = db.query(CitaDB).filter(CitaDB.id == cita_id).first()
+    if not cita:
+        return "", {}
+    paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
+    tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first() if paciente else None
+    sintomas = cita.sintomas_triaje if isinstance(cita.sintomas_triaje, dict) else {}
+    constantes_previas = sintomas.get("constantes_previas", "")
+
+    defaults = {
+        "tutor_id": tutor.id if tutor else None,
+        "tutor_nombre": tutor.nombre if tutor else "Por definir",
+        "tutor_telefono": tutor.telefono if tutor else "",
+        "paciente_id": paciente.id if paciente else None,
+        "paciente_nombre": paciente.nombre if paciente else "Paciente",
+        "especie": paciente.especie if paciente else "Canino",
+        "raza": paciente.raza if paciente else "Mestizo",
+        "peso_kg": paciente.peso_kg if (paciente and paciente.peso_kg) else None,
+        "edad_aproximada": sintomas.get("edad_aproximada", "No especificada"),
+        "constantes_previas": constantes_previas,
+        "motivo_cita": cita.motivo or ""
+    }
+    context_text = (
+        f"\n\nCONTEXTO PREVIO CARGADO EN RECEPCIÓN/AGENDA (Cita #{cita.id}):\n"
+        f"- Tutor: {defaults['tutor_nombre']} (Tel: {defaults['tutor_telefono']})\n"
+        f"- Paciente principal: {defaults['paciente_nombre']} ({defaults['especie']}, Raza: {defaults['raza']}, Peso: {defaults['peso_kg'] or 'por confirmar'} kg, Edad: {defaults['edad_aproximada']})\n"
+        f"- Motivo de ingreso: {defaults['motivo_cita']}\n"
+        f"- Constantes/Notas previas del Técnico: {constantes_previas or 'Sin notas previas'}\n"
+        "Si el veterinario no repite en voz alta el nombre del tutor, teléfono o raza del paciente principal, utiliza estos datos de recepción."
+    )
+    return context_text, defaults
+
+
+def extract_multi_soap_from_transcript(transcript_text: str, cita_context_str: str = "", defaults: Optional[Dict[str, Any]] = None) -> List[SOAPFicheSchema]:
+    """Invoca a Claude con Tool Use para extraer 1 o N fichas SOAP independientes desde una transcripción."""
+    defaults = defaults or {}
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if not anthropic_key:
+        raise ValueError("ANTHROPIC_API_KEY no configurada en las variables de entorno.")
+
+    tool_definition = {
+        "name": "registrar_ficha_soap",
+        "description": (
+            "Registra una o múltiples fichas clínicas veterinarias bajo el estándar SOAP estricto. "
+            "Si el dictado menciona a más de una mascota atendida en la sesión, separa cada mascota en su propia ficha dentro de `fichas`."
+        ),
+        "input_schema": SOAPMultiFicheEnvelope.model_json_schema()
+    }
+
+    system_prompt = (
+        "Actúas como un Médico Veterinario Clínico Senior en Chile. "
+        "Transforma el dictado natural del veterinario en terreno en fichas clínicas estructuradas bajo el estándar SOAP estricto "
+        "(S: Subjetivo/Anamnesis, O: Objetivo/Examen Físico, A: Análisis/Diagnóstico Presuntivo, P: Plan Terapéutico y Próximos Pasos) "
+        "utilizando la herramienta `registrar_ficha_soap`. "
+        "REGLA DE MÚLTIPLES PACIENTES: Si en la misma grabación el veterinario atiende o evalúa a 2 o más mascotas "
+        "(por ejemplo, dos perros o un perro y un gato en el mismo domicilio), DEBES identificar a cada mascota y crear un objeto SOAP "
+        "separado e independiente para cada una dentro de la lista `fichas` (compartiendo `tutor_nombre` y `tutor_telefono` si son del mismo dueño). "
+        "REGLA DE RESUMEN AMIGABLE: En el campo `resumen_amigable_tutor`, redacta un párrafo cálido, claro y en lenguaje cotidiano "
+        "(sin tecnicismos complejos) para que el dueño entienda qué tiene su mascota y cómo darle su tratamiento en casa. "
+        "Respeta la terminología farmacológica veterinaria chilena en el bloque SOAP y NUNCA inventes dosis ni constantes vitales que no hayan sido dictadas "
+        "(si un dato no se mencionó, coloca 'No especificado en dictado')."
+    )
+
+    anthropic_payload = {
+        "model": ANTHROPIC_MODEL,
+        "max_tokens": 3072,
+        "system": system_prompt,
+        "messages": [
+            {
+                "role": "user",
+                "content": (
+                    f"A continuación se presenta el dictado del veterinario en consulta:\n\n\"\"\"\n{transcript_text}\n\"\"\""
+                    f"{cita_context_str}\n\n"
+                    "Por favor, estructura la(s) ficha(s) clínica(s) SOAP separando por paciente si se atendió a más de una mascota."
+                )
+            }
+        ],
+        "tools": [tool_definition],
+        "tool_choice": {"type": "tool", "name": "registrar_ficha_soap"}
+    }
+
+    anthropic_headers = {
+        "x-api-key": anthropic_key,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+
+    anthropic_resp = llm_post(
+        "https://api.anthropic.com/v1/messages",
+        timeout=60.0,
+        json=anthropic_payload,
+        headers=anthropic_headers
+    )
+    claude_result = anthropic_resp.json()
+
+    content_blocks = claude_result.get("content", [])
+    tool_input = None
+    for block in content_blocks:
+        if block.get("type") == "tool_use" and block.get("name") == "registrar_ficha_soap":
+            tool_input = block.get("input", {})
+            break
+
+    if not tool_input:
+        raise ValueError(f"Claude no retornó el formato de herramienta esperado: {claude_result}")
+
+    raw_fichas: List[Dict[str, Any]] = []
+    if isinstance(tool_input, dict) and "fichas" in tool_input and isinstance(tool_input["fichas"], list):
+        raw_fichas = tool_input["fichas"]
+    elif isinstance(tool_input, dict):
+        raw_fichas = [tool_input]
+
+    if not raw_fichas:
+        raise ValueError("No se extrajeron fichas del dictado.")
+
+    validated_list: List[SOAPFicheSchema] = []
+    # Heredar tutor entre fichas hermanas si se mencionó al inicio del dictado
+    shared_tutor_nombre = defaults.get("tutor_nombre", "Por definir")
+    shared_tutor_telefono = defaults.get("tutor_telefono", "")
+    for item in raw_fichas:
+        if item.get("tutor_nombre") and item.get("tutor_nombre") not in ("Por definir", "No especificado en dictado"):
+            shared_tutor_nombre = item["tutor_nombre"]
+        if item.get("tutor_telefono") and item.get("tutor_telefono").strip():
+            shared_tutor_telefono = item["tutor_telefono"].strip()
+
+    for idx, item in enumerate(raw_fichas):
+        if not item.get("tutor_nombre") or item.get("tutor_nombre") in ("Por definir", "No especificado en dictado"):
+            item["tutor_nombre"] = shared_tutor_nombre
+        if not item.get("tutor_telefono"):
+            item["tutor_telefono"] = shared_tutor_telefono
+        if idx == 0 and defaults.get("peso_kg") and not item.get("peso_kg"):
+            item["peso_kg"] = defaults["peso_kg"]
+        soap_obj = ensure_friendly_tutor_summary(SOAPFicheSchema(**item))
+        validated_list.append(soap_obj)
+
+    return validated_list
+
+
+def persist_multi_soap_fiches(
+    db: Session,
+    primary_fiche: MedicalFicheDB,
+    validated_list: List[SOAPFicheSchema],
+    transcript_text: str,
+    defaults: Optional[Dict[str, Any]] = None
+) -> List[MedicalFicheDB]:
+    """Guarda 1 o N fichas SOAP en PostgreSQL vinculándolas como grupo multi-paciente."""
+    defaults = defaults or {}
+    all_fiches: List[MedicalFicheDB] = [primary_fiche]
+
+    # Crear fichas hermanas para los pacientes 2..N
+    for extra_idx in range(1, len(validated_list)):
+        sibling = MedicalFicheDB(
+            id=uuid.uuid4(),
+            cita_id=primary_fiche.cita_id,
+            tutor_id=defaults.get("tutor_id"),
+            estado_procesamiento="READY_FOR_REVIEW",
+            texto_transcrito_original=transcript_text,
+            error_detalle=None
+        )
+        db.add(sibling)
+        all_fiches.append(sibling)
+
+    db.flush()
+
+    group_meta = [
+        {
+            "id": str(f.id),
+            "index": i + 1,
+            "total": len(all_fiches),
+            "paciente_nombre": validated_list[i].paciente_nombre,
+            "especie": validated_list[i].especie,
+            "raza": validated_list[i].raza
+        }
+        for i, f in enumerate(all_fiches)
+    ]
+
+    for i, f in enumerate(all_fiches):
+        dump_data = validated_list[i].model_dump()
+        dump_data["_multi_patient_group"] = group_meta
+        dump_data["_patient_index"] = i + 1
+        dump_data["_patient_total"] = len(all_fiches)
+        f.json_estructurado = dump_data
+        f.estado_procesamiento = "READY_FOR_REVIEW"
+        f.error_detalle = None
+        if i == 0:
+            if defaults.get("tutor_id") and not f.tutor_id:
+                f.tutor_id = defaults["tutor_id"]
+            if defaults.get("paciente_id") and not f.paciente_id and len(all_fiches) == 1:
+                f.paciente_id = defaults["paciente_id"]
+
+    db.commit()
+    return all_fiches
 
 # -------------------------------------------------------------
 # 3. Pipeline de IA en Segundo Plano (Groq Whisper + Claude Tool Use)
@@ -622,12 +878,10 @@ def process_voice_fiche(task_id: uuid.UUID, audio_bytes: bytes, filename: str):
     """
     Procesa el audio grabado en background:
     1. Transcribe con Groq Whisper Large V3.
-    2. Estructura el SOAP con Anthropic Claude usando Tool Use para garantizar JSON estricto.
-    3. Deja la ficha en estado READY_FOR_REVIEW (esperando confirmación humana).
+    2. Estructura el SOAP (1 o múltiples pacientes) con Anthropic Claude usando Tool Use.
+    3. Deja la(s) ficha(s) en estado READY_FOR_REVIEW (esperando confirmación humana).
 
     Ley 21.719 (minimización): el audio solo existe en memoria RAM; nunca toca el disco.
-    Si el proceso muere, el audio desaparece con él y la ficha se marca FAILED al reiniciar
-    (recover_interrupted_fiches) para que el frontend la reenvíe desde su búfer IndexedDB.
     """
     db = SessionLocal()
     fiche = None
@@ -672,73 +926,29 @@ def process_voice_fiche(task_id: uuid.UUID, audio_bytes: bytes, filename: str):
         db.commit()
         logger.info(f"[Pipeline {task_id}] Transcripción completada: {transcript_text[:80]}...")
 
-        # PASO B: Estructuración SOAP con Anthropic Claude (Tool Use)
-        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-        if not anthropic_key:
-            raise ValueError("ANTHROPIC_API_KEY no configurada en las variables de entorno.")
-
+        # PASO B: Estructuración SOAP Multi-Paciente con Contexto de Cita
+        cita_context_str, cita_defaults = build_cita_context_prompt(db, fiche.cita_id)
         logger.info(f"[Pipeline {task_id}] Estructurando SOAP con Claude ({ANTHROPIC_MODEL})...")
-        tool_definition = {
-            "name": "registrar_ficha_soap",
-            "description": "Registra la ficha clínica veterinaria bajo el estándar SOAP con datos de tutor, paciente y tratamiento.",
-            "input_schema": SOAPFicheSchema.model_json_schema()
-        }
 
-        system_prompt = (
-            "Actúas como un Médico Veterinario Clínico Senior en Chile. "
-            "Transforma el dictado natural del veterinario en terreno en una ficha clínica estructurada bajo el estándar SOAP "
-            "utilizando la herramienta `registrar_ficha_soap`. "
-            "Respeta la terminología farmacológica y clínica veterinaria usada en Chile, "
-            "corrige errores fonéticos obvios de transcripción y NUNCA inventes dosis ni constantes vitales que no hayan sido dictadas "
-            "(si un dato no se mencionó, coloca 'No especificado en dictado')."
+        validated_list = extract_multi_soap_from_transcript(
+            transcript_text=transcript_text,
+            cita_context_str=cita_context_str,
+            defaults=cita_defaults
         )
 
-        anthropic_payload = {
-            "model": ANTHROPIC_MODEL,
-            "max_tokens": 2048,
-            "system": system_prompt,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": f"A continuación se presenta el dictado del veterinario en consulta:\n\n\"\"\"\n{transcript_text}\n\"\"\"\n\nPor favor, estructura la ficha clínica SOAP."
-                }
-            ],
-            "tools": [tool_definition],
-            "tool_choice": {"type": "tool", "name": "registrar_ficha_soap"}
-        }
-
-        anthropic_headers = {
-            "x-api-key": anthropic_key,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
-        }
-
-        anthropic_resp = llm_post(
-            "https://api.anthropic.com/v1/messages",
-            timeout=60.0,
-            json=anthropic_payload,
-            headers=anthropic_headers
+        all_fiches = persist_multi_soap_fiches(
+            db=db,
+            primary_fiche=fiche,
+            validated_list=validated_list,
+            transcript_text=transcript_text,
+            defaults=cita_defaults
         )
-        claude_result = anthropic_resp.json()
-
-        # Extraer llamada a herramienta
-        content_blocks = claude_result.get("content", [])
-        tool_input = None
-        for block in content_blocks:
-            if block.get("type") == "tool_use" and block.get("name") == "registrar_ficha_soap":
-                tool_input = block.get("input", {})
-                break
-
-        if not tool_input:
-            raise ValueError(f"Claude no retornó el formato de herramienta esperado: {claude_result}")
-
-        # Validar contra esquema Pydantic
-        validated_soap = SOAPFicheSchema(**tool_input)
-        fiche.json_estructurado = validated_soap.model_dump()
-        fiche.estado_procesamiento = "READY_FOR_REVIEW"
-        fiche.error_detalle = None
-        db.commit()
-        logger.info(f"[Pipeline {task_id}] Ficha estructurada en READY_FOR_REVIEW exitosamente.")
+        broadcast_clinical_event("SOAP_READY_FOR_REVIEW", {
+            "task_id": str(fiche.id),
+            "patient_count": len(all_fiches),
+            "patients": [s.paciente_nombre for s in validated_list]
+        })
+        logger.info(f"[Pipeline {task_id}] {len(all_fiches)} ficha(s) estructurada(s) en READY_FOR_REVIEW exitosamente.")
 
     except Exception as e:
         logger.error(f"[Pipeline {task_id}] Error en procesamiento: {e}")
@@ -1011,14 +1221,88 @@ async def transcribir_audio_consulta(
         "message": "Audio recibido. Procesamiento iniciado en segundo plano."
     }
 
+class StructureTextRequest(BaseModel):
+    transcript_text: str = Field(..., min_length=5, description="Texto del dictado clínico (1 o múltiples pacientes)")
+    cita_id: Optional[int] = None
+
+
+@app.post("/api/v1/covet/structure-text")
+def estructurar_texto_consulta(req: StructureTextRequest, db: Session = Depends(get_db)):
+    """
+    Estructura directamente un dictado en texto hacia 1 o múltiples fichas SOAP (separación multi-paciente).
+    Ideal para pruebas o dictado por teclado/voz del dispositivo.
+    """
+    fiche_id = uuid.uuid4()
+    fiche = MedicalFicheDB(
+        id=fiche_id,
+        cita_id=req.cita_id,
+        estado_procesamiento="PROCESSING",
+        texto_transcrito_original=req.transcript_text.strip()
+    )
+    db.add(fiche)
+    db.commit()
+    db.refresh(fiche)
+
+    try:
+        cita_context_str, cita_defaults = build_cita_context_prompt(db, req.cita_id)
+        validated_list = extract_multi_soap_from_transcript(
+            transcript_text=req.transcript_text.strip(),
+            cita_context_str=cita_context_str,
+            defaults=cita_defaults
+        )
+        all_fiches = persist_multi_soap_fiches(
+            db=db,
+            primary_fiche=fiche,
+            validated_list=validated_list,
+            transcript_text=req.transcript_text.strip(),
+            defaults=cita_defaults
+        )
+        broadcast_clinical_event("SOAP_READY_FOR_REVIEW", {
+            "task_id": str(fiche.id),
+            "patient_count": len(all_fiches),
+            "patients": [s.paciente_nombre for s in validated_list]
+        })
+        return obtener_estado_ficha(fiche.id, db)
+    except Exception as e:
+        fiche.estado_procesamiento = "FAILED"
+        fiche.error_detalle = str(e)
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Error estructurando dictado: {e}")
+
+
 @app.get("/api/v1/covet/fiches/{task_id}")
 def obtener_estado_ficha(task_id: uuid.UUID, db: Session = Depends(get_db)):
     """
     Retorna el estado de procesamiento y contenido de la ficha para alimentar el polling del Frontend.
+    Si el dictado contenía múltiples pacientes, incluye `sibling_fiches` con todas las fichas separadas.
     """
     fiche = db.query(MedicalFicheDB).filter(MedicalFicheDB.id == task_id).first()
     if not fiche:
         raise HTTPException(status_code=404, detail="Ficha clínica no encontrada")
+
+    json_est = fiche.json_estructurado if isinstance(fiche.json_estructurado, dict) else {}
+    group_meta = json_est.get("_multi_patient_group", [])
+    sibling_fiches: List[Dict[str, Any]] = []
+
+    if isinstance(group_meta, list) and len(group_meta) > 1:
+        for item in group_meta:
+            try:
+                sib_uuid = uuid.UUID(str(item.get("id")))
+                sib = db.query(MedicalFicheDB).filter(MedicalFicheDB.id == sib_uuid).first()
+                if sib:
+                    sibling_fiches.append({
+                        "id": str(sib.id),
+                        "index": item.get("index", 1),
+                        "total": item.get("total", len(group_meta)),
+                        "cita_id": sib.cita_id,
+                        "tutor_id": sib.tutor_id,
+                        "paciente_id": sib.paciente_id,
+                        "estado_procesamiento": sib.estado_procesamiento,
+                        "texto_transcrito_original": sib.texto_transcrito_original,
+                        "json_estructurado": sib.json_estructurado
+                    })
+            except Exception:
+                continue
 
     return {
         "id": str(fiche.id),
@@ -1028,6 +1312,8 @@ def obtener_estado_ficha(task_id: uuid.UUID, db: Session = Depends(get_db)):
         "estado_procesamiento": fiche.estado_procesamiento,
         "texto_transcrito_original": fiche.texto_transcrito_original,
         "json_estructurado": fiche.json_estructurado,
+        "sibling_fiches": sibling_fiches,
+        "multi_patient_count": len(sibling_fiches) if len(sibling_fiches) > 1 else 1,
         "error_detalle": fiche.error_detalle,
         "fecha_creacion": fiche.fecha_creacion.isoformat() if fiche.fecha_creacion else None,
         "fecha_confirmacion": fiche.fecha_confirmacion.isoformat() if fiche.fecha_confirmacion else None
@@ -1074,6 +1360,8 @@ def confirmar_y_enviar_ficha(
     fiche = db.query(MedicalFicheDB).filter(MedicalFicheDB.id == task_id).first()
     if not fiche:
         raise HTTPException(status_code=404, detail="Ficha clínica no encontrada")
+
+    payload = ensure_friendly_tutor_summary(payload)
 
     # 1. Sincronización Relacional: Tutor (Upsert)
     clean_phone = payload.tutor_telefono.strip()
@@ -1127,10 +1415,16 @@ def confirmar_y_enviar_ficha(
             paciente.raza = payload.raza
         db.commit()
 
-    # 3. Actualizar la Ficha Médica
+    # 3. Actualizar la Ficha Médica (preservando metadatos de grupo multi-paciente si existen)
+    prev_json = fiche.json_estructurado if isinstance(fiche.json_estructurado, dict) else {}
+    new_json = payload.model_dump()
+    for meta_key in ("_multi_patient_group", "_patient_index", "_patient_total"):
+        if meta_key in prev_json:
+            new_json[meta_key] = prev_json[meta_key]
+
     fiche.tutor_id = tutor.id
     fiche.paciente_id = paciente.id
-    fiche.json_estructurado = payload.model_dump()
+    fiche.json_estructurado = new_json
     fiche.fecha_confirmacion = now
     fiche.n8n_intentos = 0
     fiche.n8n_ultimo_intento = None
@@ -1140,6 +1434,13 @@ def confirmar_y_enviar_ficha(
     n8n_dispatched, n8n_error = dispatch_fiche_to_n8n(db, fiche)
     db.commit()
     db.refresh(fiche)
+
+    broadcast_clinical_event("FICHE_CONFIRMED", {
+        "fiche_id": str(fiche.id),
+        "paciente_id": paciente.id,
+        "paciente_nombre": paciente.nombre,
+        "tutor_nombre": tutor.nombre
+    })
 
     if n8n_dispatched:
         message = "Ficha médica confirmada y WhatsApp despachado."
@@ -1162,10 +1463,20 @@ def confirmar_y_enviar_ficha(
     }
 
 # -------------------------------------------------------------
-# 6. Endpoints CRUD Existentes (Mantenidos intactos)
+# 6. Endpoints CRUD + Flujo Colaborativo en Tiempo Real (Técnico ➔ Veterinario)
+#    y Resumidor de Historial Médico Extenso
 # -------------------------------------------------------------
 @app.post("/api/tutores", response_model=TutorOut)
 def crear_tutor(tutor: TutorCreate, db: Session = Depends(get_db)):
+    existing = db.query(TutorDB).filter(TutorDB.telefono == tutor.telefono.strip()).first()
+    if existing:
+        if tutor.nombre and tutor.nombre.strip():
+            existing.nombre = tutor.nombre.strip()
+        if tutor.email:
+            existing.email = tutor.email
+        db.commit()
+        db.refresh(existing)
+        return existing
     db_tutor = TutorDB(**tutor.dict())
     db.add(db_tutor)
     db.commit()
@@ -1196,15 +1507,347 @@ def crear_cita(cita: CitaCreate, db: Session = Depends(get_db)):
     paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
     if not paciente:
         raise HTTPException(status_code=404, detail="Paciente no encontrado")
+    tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first()
     db_cita = CitaDB(**cita.dict())
     db.add(db_cita)
     db.commit()
     db.refresh(db_cita)
+    broadcast_clinical_event("APPOINTMENT_CREATED", {
+        "cita_id": db_cita.id,
+        "paciente_id": paciente.id,
+        "paciente_nombre": paciente.nombre,
+        "especie": paciente.especie,
+        "raza": paciente.raza or "Mestizo",
+        "peso_kg": paciente.peso_kg,
+        "tutor_nombre": tutor.nombre if tutor else "Por definir",
+        "tutor_telefono": tutor.telefono if tutor else "",
+        "motivo": db_cita.motivo
+    })
     return db_cita
 
 @app.get("/api/citas", response_model=List[CitaOut])
 def listar_citas(db: Session = Depends(get_db)):
     return db.query(CitaDB).order_by(CitaDB.fecha_hora.asc()).all()
+
+
+class CollabAdmisionRequest(BaseModel):
+    tutor_nombre: str = Field(..., min_length=2, example="Roberto Gómez")
+    tutor_telefono: str = Field(..., min_length=6, example="+56991234567")
+    paciente_nombre: str = Field(..., min_length=1, example="Thor")
+    especie: str = Field(default="Canino", example="Canino")
+    raza: str = Field(default="Mestizo", example="Pastor Alemán")
+    edad_aproximada: Optional[str] = Field(default="No especificada", example="4 años")
+    peso_kg: Optional[float] = Field(default=None, example=28.5)
+    constantes_previas: Optional[str] = Field(default="", example="T° 38.7°C, FC 96 lpm, mucosas rosadas")
+    motivo: str = Field(..., min_length=3, example="Control dermatológico y otitis")
+    nivel_urgencia: Optional[str] = Field(default="MEDIUM", example="MEDIUM")
+    modalidad: Optional[str] = Field(default="CLINICA_PRESENCIAL", example="CLINICA_PRESENCIAL")
+
+
+@app.post("/api/v1/covet/colaborativo/admision")
+def registrar_admision_colaborativa(req: CollabAdmisionRequest, db: Session = Depends(get_db)):
+    """
+    Flujo Colaborativo Técnico ➔ Veterinario:
+    Permite que el técnico/recepción cargue en 1 paso los datos iniciales del tutor, mascota,
+    peso, constantes fisiológicas previas y motivo, sincronizándolos en vivo con la pantalla del veterinario.
+    """
+    clean_phone = req.tutor_telefono.strip()
+    tutor = db.query(TutorDB).filter(TutorDB.telefono == clean_phone).first()
+    if not tutor:
+        tutor = TutorDB(nombre=req.tutor_nombre.strip(), telefono=clean_phone)
+        db.add(tutor)
+        db.commit()
+        db.refresh(tutor)
+    else:
+        tutor.nombre = req.tutor_nombre.strip()
+        db.commit()
+
+    paciente = db.query(PacienteDB).filter(
+        PacienteDB.tutor_id == tutor.id,
+        PacienteDB.nombre.ilike(req.paciente_nombre.strip())
+    ).first()
+    if not paciente:
+        paciente = PacienteDB(
+            tutor_id=tutor.id,
+            nombre=req.paciente_nombre.strip(),
+            especie=req.especie or "Canino",
+            raza=req.raza or "Mestizo",
+            peso_kg=req.peso_kg or 0.0
+        )
+        db.add(paciente)
+        db.commit()
+        db.refresh(paciente)
+    else:
+        paciente.especie = req.especie or paciente.especie
+        paciente.raza = req.raza or paciente.raza
+        if req.peso_kg is not None:
+            paciente.peso_kg = req.peso_kg
+        db.commit()
+
+    now = datetime.datetime.utcnow()
+    motivo_full = req.motivo.strip()
+    if req.constantes_previas and req.constantes_previas.strip():
+        motivo_full = f"{motivo_full} | Triaje Técnico: {req.constantes_previas.strip()}"
+
+    cita = CitaDB(
+        paciente_id=paciente.id,
+        fecha_hora=now,
+        motivo=motivo_full,
+        confirmada=True,
+        estado_reserva="CONFIRMED",
+        estado_cita="CONFIRMED",
+        nivel_urgencia=(req.nivel_urgencia or "MEDIUM").upper(),
+        triaje_urgencia=(req.nivel_urgencia or "MEDIUM").upper(),
+        modalidad=(req.modalidad or "CLINICA_PRESENCIAL").upper(),
+        tipo_atencion=(req.modalidad or "CLINICA_PRESENCIAL").upper(),
+        ventana_horaria="EN_SALA_LISTO_PARA_VET",
+        sintomas_triaje={
+            "motivo": req.motivo.strip(),
+            "constantes_previas": (req.constantes_previas or "").strip(),
+            "edad_aproximada": req.edad_aproximada or "No especificada",
+            "especie": paciente.especie,
+            "cargado_por": "TECNICO_ASISTENTE"
+        }
+    )
+    db.add(cita)
+    db.commit()
+    db.refresh(cita)
+
+    event_payload = {
+        "cita_id": cita.id,
+        "tutor_id": tutor.id,
+        "tutor_nombre": tutor.nombre,
+        "tutor_telefono": tutor.telefono,
+        "paciente_id": paciente.id,
+        "paciente_nombre": paciente.nombre,
+        "especie": paciente.especie,
+        "raza": paciente.raza or "Mestizo",
+        "edad_aproximada": req.edad_aproximada or "No especificada",
+        "peso_kg": paciente.peso_kg,
+        "constantes_previas": (req.constantes_previas or "").strip(),
+        "motivo": cita.motivo,
+        "nivel_urgencia": cita.nivel_urgencia,
+        "modalidad": cita.modalidad
+    }
+    seq = broadcast_clinical_event("COLLAB_INTAKE_READY", event_payload)
+    return {
+        "status": "synced",
+        "event_seq": seq,
+        **event_payload
+    }
+
+
+@app.get("/api/v1/covet/citas/contexto")
+def listar_citas_con_contexto(db: Session = Depends(get_db)):
+    """Devuelve las citas enriquecidas con datos completos de Tutor, Paciente y constantes cargadas por el Técnico."""
+    citas = db.query(CitaDB).order_by(CitaDB.id.desc()).limit(40).all()
+    pacientes = {p.id: p for p in db.query(PacienteDB).all()}
+    tutores = {t.id: t for t in db.query(TutorDB).all()}
+    result = []
+    for c in citas:
+        pac = pacientes.get(c.paciente_id)
+        tut = tutores.get(pac.tutor_id) if pac else None
+        sint = c.sintomas_triaje if isinstance(c.sintomas_triaje, dict) else {}
+        result.append({
+            "cita_id": c.id,
+            "fecha_hora": c.fecha_hora.isoformat() if c.fecha_hora else None,
+            "motivo": c.motivo,
+            "nivel_urgencia": c.nivel_urgencia or c.triaje_urgencia or "MEDIUM",
+            "modalidad": c.modalidad or c.tipo_atencion or "DOMICILIO",
+            "estado_cita": c.estado_cita or c.estado_reserva or "CONFIRMED",
+            "paciente_id": pac.id if pac else c.paciente_id,
+            "paciente_nombre": pac.nombre if pac else f"Paciente #{c.paciente_id}",
+            "especie": pac.especie if pac else "Canino",
+            "raza": pac.raza if (pac and pac.raza) else "Mestizo",
+            "peso_kg": pac.peso_kg if (pac and pac.peso_kg) else None,
+            "edad_aproximada": sint.get("edad_aproximada", "No especificada"),
+            "constantes_previas": sint.get("constantes_previas", ""),
+            "cargado_por": sint.get("cargado_por", "AGENDA"),
+            "tutor_id": tut.id if tut else None,
+            "tutor_nombre": tut.nombre if tut else "Por definir",
+            "tutor_telefono": tut.telefono if tut else ""
+        })
+    return result
+
+
+@app.get("/api/v1/covet/events/recent")
+def obtener_eventos_recientes(since_seq: int = 0):
+    """Endpoint ligero de sincronización delta para pantallas colaborativas."""
+    current_seq, events = get_events_since(since_seq)
+    return {"current_seq": current_seq, "events": events}
+
+
+@app.get("/api/v1/covet/events/stream")
+async def stream_clinical_events(request: Request, since_seq: int = 0):
+    """Stream Server-Sent Events (SSE) en tiempo real para sincronizar Técnico ➔ Veterinario sin recargar."""
+    async def event_generator():
+        last_seq, initial_events = get_events_since(since_seq)
+        yield f"data: {json.dumps({'event_type': 'CONNECTED', 'seq': last_seq})}\n\n"
+        for evt in initial_events:
+            yield f"data: {json.dumps(evt)}\n\n"
+
+        ticks = 0
+        while True:
+            if await request.is_disconnected():
+                break
+            await asyncio.sleep(1.0)
+            ticks += 1
+            curr_seq, new_events = get_events_since(last_seq)
+            if new_events:
+                last_seq = curr_seq
+                for evt in new_events:
+                    yield f"data: {json.dumps(evt)}\n\n"
+            elif ticks % 15 == 0:
+                yield ": keepalive\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+class HistorialResumenRequest(BaseModel):
+    paciente_id: Optional[int] = None
+    paciente_nombre: Optional[str] = None
+    tutor_telefono: Optional[str] = None
+
+
+@app.post("/api/v1/covet/historial/resumir")
+def resumir_historial_medico_extenso(req: HistorialResumenRequest, db: Session = Depends(get_db)):
+    """
+    Genera una Epicrisis / Resumen Longitudinal de historiales médicos extensos de una mascota,
+    combinando múltiples fichas clínicas previas en una síntesis ejecutiva para el veterinario
+    y una versión explicativa para el tutor.
+    """
+    all_fiches = db.query(MedicalFicheDB).order_by(MedicalFicheDB.fecha_creacion.asc()).all()
+    matched_fiches: List[MedicalFicheDB] = []
+
+    target_name = (req.paciente_nombre or "").strip().lower()
+    if req.paciente_id and not target_name:
+        pac_db = db.query(PacienteDB).filter(PacienteDB.id == req.paciente_id).first()
+        if pac_db:
+            target_name = pac_db.nombre.strip().lower()
+
+    for f in all_fiches:
+        j = f.json_estructurado if isinstance(f.json_estructurado, dict) else {}
+        if not j:
+            continue
+        f_pac_name = str(j.get("paciente_nombre", "")).strip().lower()
+        if req.paciente_id and f.paciente_id == req.paciente_id:
+            matched_fiches.append(f)
+        elif target_name and f_pac_name == target_name:
+            matched_fiches.append(f)
+
+    if not matched_fiches:
+        raise HTTPException(status_code=404, detail="No se encontraron fichas clínicas previas para este paciente.")
+
+    cronologia = []
+    pesos = []
+    diagnosticos = []
+    tratamientos = []
+    especie_label = "Mascota"
+    raza_label = "Mestizo"
+    tutor_label = "Tutor"
+    paciente_display = req.paciente_nombre or "Paciente"
+
+    for idx, f in enumerate(matched_fiches, start=1):
+        j = f.json_estructurado or {}
+        fecha_str = (f.fecha_confirmacion or f.fecha_creacion or datetime.datetime.utcnow()).strftime("%d/%m/%Y")
+        paciente_display = j.get("paciente_nombre") or paciente_display
+        especie_label = j.get("especie") or especie_label
+        raza_label = j.get("raza") or raza_label
+        tutor_label = j.get("tutor_nombre") or tutor_label
+        peso_val = j.get("peso_kg")
+        if peso_val:
+            pesos.append(f"{peso_val} kg ({fecha_str})")
+        diag = j.get("diagnostico_presuntivo", "Evaluación general")
+        plan = j.get("plan_terapeutico", "Sin fármacos registrados")
+        anam = j.get("anamnesis", "")
+        diagnosticos.append(f"[{fecha_str}] {diag}")
+        tratamientos.append(f"[{fecha_str}] {plan}")
+        cronologia.append({
+            "consulta_num": idx,
+            "fecha": fecha_str,
+            "folio": str(f.id)[:8].upper(),
+            "anamnesis": anam,
+            "diagnostico": diag,
+            "tratamiento": plan,
+            "peso_kg": peso_val
+        })
+
+    # Síntesis con Claude si hay API key, con fallback estructurado inmediato
+    resumen_ia_clinico = (
+        f"Paciente {paciente_display} ({especie_label} · {raza_label}), tutor {tutor_label}, "
+        f"registra {len(matched_fiches)} atención(es) clínica(s) documentada(s). "
+        f"Evolución diagnóstica: {' -> '.join(diagnosticos)}. "
+        f"Esquemas terapéuticos administrados: {' | '.join(tratamientos)}."
+    )
+    resumen_ia_tutor = (
+        f"Resumen de salud de {paciente_display}: Hemos acompañado su evolución a lo largo de {len(matched_fiches)} consulta(s). "
+        f"Sus diagnósticos principales han sido {', '.join(d.split('] ')[-1] for d in diagnosticos)} "
+        f"y se mantiene bajo seguimiento preventivo."
+    )
+
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if anthropic_key and len(matched_fiches) >= 1:
+        try:
+            hist_prompt = "\n".join([
+                f"- Consulta #{c['consulta_num']} ({c['fecha']}): Peso={c['peso_kg']}kg | Anamnesis={c['anamnesis']} | Diagnóstico={c['diagnostico']} | Plan={c['tratamiento']}"
+                for c in cronologia
+            ])
+            resp = llm_post(
+                "https://api.anthropic.com/v1/messages",
+                timeout=35.0,
+                headers={
+                    "x-api-key": anthropic_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": ANTHROPIC_MODEL,
+                    "max_tokens": 900,
+                    "system": (
+                        "Eres un Médico Veterinario Internista Senior en Chile. "
+                        "A partir del historial longitudinal de consultas de una mascota, devuelve un JSON válido con dos claves exactas: "
+                        "`resumen_clinico` (epicrisis técnica concisa para el veterinario tratante, destacando evolución de peso, recurrencias, fármacos previos y alertas) "
+                        "y `resumen_amigable_tutor` (explicación cálida y sencilla del historial completo para el dueño)."
+                    ),
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": f"Paciente: {paciente_display} ({especie_label}, {raza_label}).\nHistorial:\n{hist_prompt}\n\nResponde solo con JSON {{\"resumen_clinico\": \"...\", \"resumen_amigable_tutor\": \"...\"}}."
+                        }
+                    ]
+                }
+            )
+            blocks = resp.json().get("content", [])
+            if blocks and blocks[0].get("text"):
+                raw_txt = blocks[0]["text"].strip()
+                start_idx = raw_txt.find("{")
+                end_idx = raw_txt.rfind("}")
+                if start_idx != -1 and end_idx != -1:
+                    parsed = json.loads(raw_txt[start_idx:end_idx + 1])
+                    resumen_ia_clinico = parsed.get("resumen_clinico") or resumen_ia_clinico
+                    resumen_ia_tutor = parsed.get("resumen_amigable_tutor") or resumen_ia_tutor
+        except Exception as err:
+            logger.warning(f"[Historial Resumen] Fallback determinista activado: {err}")
+
+    return {
+        "paciente_nombre": paciente_display,
+        "especie": especie_label,
+        "raza": raza_label,
+        "tutor_nombre": tutor_label,
+        "total_consultas": len(matched_fiches),
+        "evolucion_peso": pesos,
+        "resumen_clinico_veterinario": resumen_ia_clinico,
+        "resumen_amigable_tutor": resumen_ia_tutor,
+        "cronologia": cronologia
+    }
 
 # -------------------------------------------------------------
 # 7. Protocolos Clínicos de Primeros Auxilios (Blindaje Médico-Legal)
@@ -3016,10 +3659,12 @@ def generar_certificado_dpa(
 def generar_receta_medica_pdf(
     task_id: uuid.UUID,
     auto_print: int = 0,
+    vet: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Genera la Receta Médica Veterinaria Oficial e Imprimible (con estándar SAG / Colmevet y Ley 21.719).
+    Genera la Receta Médica Veterinaria Oficial e Imprimible (con estándar SAG / Colmevet y Ley 21.719),
+    incluyendo el Logo de la Clínica, Color Corporativo White-Label y el Resumen Amigable para el Tutor.
     Vista lista para imprimir o guardar como PDF en cualquier navegador o teléfono móvil.
     """
     fiche = db.query(MedicalFicheDB).filter(MedicalFicheDB.id == task_id).first()
@@ -3039,17 +3684,47 @@ def generar_receta_medica_pdf(
     diagnostico = json_data.get("diagnostico_presuntivo") or "Evaluación clínica general."
     plan_terapeutico = json_data.get("plan_terapeutico") or "Indicaciones generales según evolución."
     proximos_pasos = json_data.get("proximos_pasos") or "Control a necesidad según evolución clínica."
+    resumen_amigable = json_data.get("resumen_amigable_tutor") or (
+        f"En la evaluación de hoy revisamos a {paciente_nombre} ({especie}). "
+        f"Presenta un cuadro compatible con {diagnostico}. "
+        f"Sigue el tratamiento indicado abajo ({plan_terapeutico}) y mantén observación en casa."
+    )
 
     fecha_dt = fiche.fecha_confirmacion or fiche.fecha_creacion or datetime.datetime.utcnow()
     fecha_emision = fecha_dt.strftime("%d/%m/%Y %H:%M")
     folio_receta = f"COVET-2026-{str(fiche.id)[:8].upper()}"
 
+    # Recuperar Marca Blanca (Logo, Color Primario, Nombre Comercial) si aplica
+    marca = None
+    target_slug = (vet or "").strip().lower()
+    if not target_slug and fiche.cita_id:
+        cita_ref = db.query(CitaDB).filter(CitaDB.id == fiche.cita_id).first()
+        if cita_ref and cita_ref.clinica_slug:
+            target_slug = cita_ref.clinica_slug.strip().lower()
+    if target_slug:
+        marca = db.query(ClinicaMarcaDB).filter(ClinicaMarcaDB.slug == target_slug, ClinicaMarcaDB.activo.is_(True)).first()
+    if not marca:
+        marca = db.query(ClinicaMarcaDB).filter(ClinicaMarcaDB.activo.is_(True)).order_by(ClinicaMarcaDB.created_at.desc()).first()
+
     # Recuperar datos del profesional veterinario
     contrato = db.query(VetDPAContratoDB).order_by(VetDPAContratoDB.fecha_firma.desc()).first()
-    vet_nombre = contrato.nombre_profesional if contrato else "Dra. Carolina Rojas Morales"
-    vet_rut = contrato.rut_profesional if contrato else "16.789.123-4"
+    vet_nombre = (marca.nombre_fantasia if marca and marca.nombre_fantasia else None) or (contrato.nombre_profesional if contrato else "Dra. Carolina Rojas Morales")
+    vet_rut = (marca.rut_responsable if marca and marca.rut_responsable else None) or (contrato.rut_profesional if contrato else "16.789.123-4")
     vet_colmevet = contrato.registro_colmevet_sag if contrato else "Colmevet N° 4521 · SAG 8912"
-    vet_email = contrato.email_contacto if contrato and contrato.email_contacto else "consultas@covet.cl"
+    vet_email = (marca.email_privacidad if marca and marca.email_privacidad else None) or (contrato.email_contacto if contrato and contrato.email_contacto else "consultas@covet.cl")
+    brand_color = (marca.color_primario if marca and marca.color_primario else "#0d9488")
+    logo_url = (marca.logo_url if marca and marca.logo_url else "")
+
+    if logo_url:
+        logo_html = f'<img src="{logo_url}" alt="Logo Clínica" class="clinic-logo-img" onerror="this.style.display=\'none\'">'
+    else:
+        logo_html = f"""<div class="clinic-logo-svg" aria-label="Logo Clínica Veterinaria">
+          <svg width="46" height="46" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect width="48" height="48" rx="12" fill="{brand_color}" fill-opacity="0.12"/>
+            <path d="M24 11V37M11 24H37" stroke="{brand_color}" stroke-width="4.5" stroke-linecap="round"/>
+            <circle cx="24" cy="24" r="19" stroke="{brand_color}" stroke-width="2"/>
+          </svg>
+        </div>"""
 
     pepper = get_privacy_pepper()
     sello_hmac = hmac.new(pepper.encode(), f"{folio_receta}|{paciente_nombre}|{fecha_emision}".encode(), hashlib.sha256).hexdigest()[:24].upper()
@@ -3097,7 +3772,7 @@ def generar_receta_medica_pdf(
       gap: 0.75rem;
     }}
     .btn-print {{
-      background: #0d9488;
+      background: {brand_color};
       color: white;
       border: none;
       padding: 0.75rem 1.5rem;
@@ -3107,7 +3782,6 @@ def generar_receta_medica_pdf(
       cursor: pointer;
       box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
     }}
-    .btn-print:hover {{ background: #0f766e; }}
     .btn-close-win {{
       background: #e2e8f0;
       color: #334155;
@@ -3121,14 +3795,35 @@ def generar_receta_medica_pdf(
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      border-bottom: 2px solid #0d9488;
+      border-bottom: 2px solid {brand_color};
       padding-bottom: 1.25rem;
       margin-bottom: 1.5rem;
+      gap: 1rem;
+    }}
+    .vet-brand-wrap {{
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+    }}
+    .clinic-logo-img {{
+      width: 54px;
+      height: 54px;
+      object-fit: contain;
+      border-radius: 10px;
+      border: 1px solid #e2e8f0;
+      padding: 4px;
+      background: #ffffff;
+    }}
+    .clinic-logo-svg {{
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }}
     .vet-identity h1 {{
       font-size: 1.35rem;
       margin: 0 0 0.25rem 0;
-      color: #0d9488;
+      color: {brand_color};
     }}
     .vet-sub {{
       font-size: 0.85rem;
@@ -3157,7 +3852,7 @@ def generar_receta_medica_pdf(
       border-radius: 6px;
       border: 1px solid #e2e8f0;
       font-size: 0.88rem;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }}
     .patient-box div strong {{
       color: #475569;
@@ -3166,16 +3861,33 @@ def generar_receta_medica_pdf(
       display: block;
     }}
     .clinical-summary {{
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
       font-size: 0.88rem;
       background: #ffffff;
       border: 1px solid #e2e8f0;
       border-radius: 6px;
       padding: 0.85rem 1.15rem;
     }}
-    .clinical-summary strong {{ color: #0d9488; }}
+    .clinical-summary strong {{ color: {brand_color}; }}
+    .friendly-tutor-box {{
+      margin-bottom: 1.35rem;
+      font-size: 0.9rem;
+      background: #f0fdfa;
+      border-left: 4px solid {brand_color};
+      border-radius: 6px;
+      padding: 0.9rem 1.15rem;
+      color: #1e293b;
+    }}
+    .friendly-tutor-box strong {{
+      display: block;
+      color: {brand_color};
+      margin-bottom: 0.25rem;
+      font-size: 0.84rem;
+      text-transform: uppercase;
+      letter-spacing: 0.02em;
+    }}
     .rx-body {{
-      border: 1.5px solid #0d9488;
+      border: 1.5px solid {brand_color};
       border-radius: 8px;
       padding: 1.5rem 1.75rem;
       margin-bottom: 1.5rem;
@@ -3186,7 +3898,7 @@ def generar_receta_medica_pdf(
       font-family: "Times New Roman", Times, serif;
       font-size: 2.2rem;
       font-weight: bold;
-      color: #0d9488;
+      color: {brand_color};
       line-height: 1;
       margin-bottom: 0.5rem;
     }}
@@ -3243,7 +3955,7 @@ def generar_receta_medica_pdf(
     .hmac-code {{
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-weight: 700;
-      color: #0d9488;
+      color: {brand_color};
     }}
   </style>
 </head>
@@ -3255,10 +3967,13 @@ def generar_receta_medica_pdf(
 
   <div class="rx-sheet">
     <div class="rx-header">
-      <div class="vet-identity">
-        <h1>{vet_nombre}</h1>
-        <div class="vet-sub">Médico Veterinaria · {vet_colmevet}</div>
-        <div style="font-size: 0.78rem; color: #64748b;">RUT: {vet_rut} · Contacto: {vet_email}</div>
+      <div class="vet-brand-wrap">
+        {logo_html}
+        <div class="vet-identity">
+          <h1>{vet_nombre}</h1>
+          <div class="vet-sub">Médico Veterinario · {vet_colmevet}</div>
+          <div style="font-size: 0.78rem; color: #64748b;">RUT: {vet_rut} · Contacto: {vet_email}</div>
+        </div>
       </div>
       <div class="rx-folio-box">
         <div style="font-size: 0.72rem; color: #64748b; text-transform: uppercase; font-weight: 700;">Folio Receta Oficial</div>
@@ -3286,7 +4001,12 @@ def generar_receta_medica_pdf(
     </div>
 
     <div class="clinical-summary">
-      <strong>Diagnóstico Presuntivo / Motivo:</strong> {diagnostico}
+      <strong>Diagnóstico Presuntivo / Motivo Clínico:</strong> {diagnostico}
+    </div>
+
+    <div class="friendly-tutor-box">
+      <strong>💬 Resumen Amigable para el Tutor (En Lenguaje Sencillo):</strong>
+      <div>{resumen_amigable}</div>
     </div>
 
     <div class="rx-body">
