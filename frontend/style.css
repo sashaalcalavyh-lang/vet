@@ -5469,6 +5469,86 @@ body.theme-light .mode-btn.active {
   transform: translateY(-1px);
 }
 
+/* ======================================================== */
+/* 6. GUARDIA 24/7 NOCTURNA, ANTI-INASISTENCIAS & NO-DIAG   */
+/* ======================================================== */
+.iterait-guard-bar {
+  margin-top: 1.35rem;
+  padding: 0.85rem 1rem;
+  background: #fafafa;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  text-align: left;
+  font-size: 0.78rem;
+  color: #475569;
+  line-height: 1.45;
+  width: 100%;
+  max-width: 680px;
+}
+
+.iterait-guard-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.iterait-guard-icon {
+  font-size: 0.95rem;
+  line-height: 1.25;
+  flex-shrink: 0;
+}
+
+.iterait-guard-item strong {
+  color: #0f172a;
+}
+
+.iterait-guard-divider {
+  height: 1px;
+  background: rgba(15, 23, 42, 0.06);
+  width: 100%;
+}
+
+.triage-legal-nodiag-pill {
+  margin-top: 0.75rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.04);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  font-size: 0.76rem;
+  color: #334155;
+  line-height: 1.4;
+}
+
+.btn-cita-reminder-24h {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.38rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(233, 30, 99, 0.28);
+  background: #fdf2f8;
+  color: var(--daniela-magenta-dark);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 150ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-cita-reminder-24h:hover:not(:disabled) {
+  background: var(--daniela-magenta);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.btn-cita-reminder-24h:disabled {
+  opacity: 0.8;
+  cursor: default;
+}
+
+
 
 
 

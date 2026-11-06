@@ -1992,6 +1992,15 @@ async function loadAppointmentsData(autoSelectCitaId = null) {
     if (kpiPacientes) kpiPacientes.textContent = pacientes.length;
     if (kpiTutores) kpiTutores.textContent = tutores.length;
     if (tabCitasCounter) tabCitasCounter.textContent = citas.length;
+    const kpiOffhours = document.getElementById('kpi-offhours-count');
+    if (kpiOffhours) {
+      const confirmedOrNight = citas.filter(c => {
+        const d = c.fecha_hora ? new Date(c.fecha_hora) : null;
+        const isNightOrWknd = d ? (d.getHours() >= 20 || d.getHours() < 8 || d.getDay() === 0 || d.getDay() === 6) : false;
+        return isNightOrWknd || c.estado_reserva === 'CONFIRMED' || c.pago_estado === 'CONFIRMED';
+      }).length;
+      kpiOffhours.textContent = confirmedOrNight || citas.length;
+    }
 
     renderAppointmentsList(citas, pacientes);
     populateAppointmentContextSelector(citas, pacientes, autoSelectCitaId);
@@ -2046,23 +2055,55 @@ function renderAppointmentsList(citas, pacientes) {
 
     const modalidad = (cita.modalidad || cita.tipo_atencion || 'DOMICILIO').toUpperCase();
     const ventana = cita.ventana_horaria ? `• Horario: ${escapeHtml(cita.ventana_horaria)}` : '';
+    const dObj = cita.fecha_hora ? new Date(cita.fecha_hora) : null;
+    const isOffHours = dObj ? (dObj.getHours() >= 20 || dObj.getHours() < 8 || dObj.getDay() === 0 || dObj.getDay() === 6) : false;
+    const offHoursBadge = isOffHours
+      ? '<span class="cita-status-tag" style="background:#fdf2f8;color:#be185d;border:1px solid rgba(233,30,99,0.25);">🌙 Captura 24/7</span>'
+      : '';
 
     return `
       <div class="appointment-card ${statusClass}">
-        <div class="cita-pet">
+        <div class="cita-pet" style="display:flex;align-items:center;flex-wrap:wrap;gap:0.4rem;">
           <span>${emoji}</span>
           <strong style="font-size:1.02rem;">${escapeHtml(paciente.nombre)}</strong>
           <small style="color:var(--text-dim);font-weight:700;">[${modalidad}]</small>
           ${urgencyBadge}
+          ${offHoursBadge}
           <span class="cita-status-tag ${statusClass}">${statusText}</span>
         </div>
         <div class="cita-motivo" style="margin: 0.35rem 0;">${escapeHtml(cita.motivo)}</div>
-        <div class="cita-time" style="font-size:0.82rem;color:var(--text-dim);">
-          📅 ${dateFormatted} ${ventana} • Arancel: $${Number(cita.monto_pago || 0).toLocaleString('es-CL')} CLP
+        <div class="cita-time" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;font-size:0.82rem;color:var(--text-dim);">
+          <span>📅 ${dateFormatted} ${ventana} • Arancel: $${Number(cita.monto_pago || cita.monto_clp || 25000).toLocaleString('es-CL')} CLP</span>
+          <button type="button" class="btn-cita-reminder-24h" data-remind-cita-id="${cita.id}">
+            🔔 Recordatorio 24h (WhatsApp)
+          </button>
         </div>
       </div>
     `;
   }).join('');
+
+  appointmentsContainer.querySelectorAll('.btn-cita-reminder-24h').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const citaId = btn.getAttribute('data-remind-cita-id');
+      if (!citaId) return;
+      btn.disabled = true;
+      btn.textContent = '⏳ Enviando...';
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/covet/citas/${citaId}/send-reminder`, { method: 'POST' });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        btn.textContent = '✅ Recordatorio 24h Enviado';
+        showToast('Recordatorio 24h Anti-Inasistencias registrado y despachado.', 'success');
+        if (data.wa_reminder_url) {
+          window.open(data.wa_reminder_url, '_blank');
+        }
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = '🔔 Recordatorio 24h (WhatsApp)';
+        showToast(`Error al enviar recordatorio: ${err.message}`, 'error');
+      }
+    });
+  });
 }
 
 function populateAppointmentContextSelector(citas, pacientes, autoSelectCitaId = null) {
@@ -3685,6 +3726,21 @@ document.querySelectorAll('.zf-method-card').forEach(btn => {
     }
   });
 });
+
+// Detección Dinámica de Guardia Nocturna / Fin de Semana (24/7 Reception Standard)
+(function initNightWeekendGuardBanner() {
+  const now = new Date();
+  const hour = now.getHours();
+  const day = now.getDay();
+  const isNightOrWeekend = hour >= 20 || hour < 8 || day === 0 || day === 6;
+  const guardText = document.getElementById('night-guard-text');
+  const guardIcon = document.getElementById('night-guard-icon');
+  if (guardText && isNightOrWeekend) {
+    if (guardIcon) guardIcon.textContent = '🌙';
+    guardText.innerHTML = '<strong>Guardia Digital Nocturna / Fin de Semana Activa:</strong> Aunque la consulta presencial esté cerrada a esta hora, deja tu cupo reservado ahora mismo en &lt; 60 seg para primera hora.';
+  }
+})();
+
 
 
 

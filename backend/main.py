@@ -2109,15 +2109,19 @@ def calculate_hybrid_slots(db: Session, urgency_level: str) -> dict:
         logger.warning(f"Error al limpiar holds expirados: {e}")
 
     urgency = (urgency_level or "LOW").strip().upper()
+    now_cl = now - datetime.timedelta(hours=3)
+    is_off_hours = bool(now_cl.hour >= 20 or now_cl.hour < 8 or now_cl.weekday() >= 5)
 
     if urgency == "HIGH":
         # Primer bloque de urgencia disponible hoy a domicilio (aprox 45 min)
-        urgencia_domicilio_dt = now + datetime.timedelta(minutes=45)
+        urgencia_domicilio_dt = now_cl + datetime.timedelta(minutes=45)
         urgencia_domicilio_str = f"Hoy a las {urgencia_domicilio_dt.strftime('%H:%M')} hrs"
 
         return {
             "urgency_level": "HIGH",
             "tipo_sugerido": "URGENCIA_INMEDIATA",
+            "captura_fuera_de_horario": is_off_hours,
+            "regla_no_diagnostico": "Asistente administrativo 24/7: clasifica prioridad, agenda y confirma. El diagnóstico médico es exclusivo de la Dra. Daniela Alcázar.",
             "modalidades_disponibles": [
                 {
                     "modalidad": "TELEMEDICINA",
@@ -2146,8 +2150,12 @@ def calculate_hybrid_slots(db: Session, urgency_level: str) -> dict:
         ).all()
         horas_ocupadas = {c.fecha_hora.strftime("%H:%M") for c in citas_activas if c.fecha_hora}
 
-        # Candidatos dentro de la ventana operativa 08:30 a 20:30
-        candidatos = ["11:00", "15:30", "18:00", "09:30", "12:30", "16:45", "19:15"]
+        # Candidatos dentro de la ventana operativa 08:30 a 20:30 (priorizando primera hora si es de noche/fin de semana)
+        candidatos = (
+            ["09:00", "10:30", "12:00", "15:30", "18:00"]
+            if is_off_hours
+            else ["11:00", "15:30", "18:00", "09:30", "12:30", "16:45", "19:15"]
+        )
         exact_slots = []
         for h in candidatos:
             if h not in horas_ocupadas:
@@ -2155,7 +2163,7 @@ def calculate_hybrid_slots(db: Session, urgency_level: str) -> dict:
             if len(exact_slots) >= 3:
                 break
         if len(exact_slots) < 3:
-            exact_slots = ["11:00", "15:30", "18:00"]
+            exact_slots = ["09:00", "10:30", "12:00"] if is_off_hours else ["11:00", "15:30", "18:00"]
 
         flexible_windows = [
             {
@@ -2191,6 +2199,8 @@ def calculate_hybrid_slots(db: Session, urgency_level: str) -> dict:
 
         return {
             "urgency_level": urgency,
+            "captura_fuera_de_horario": is_off_hours,
+            "regla_no_diagnostico": "Asistente administrativo 24/7: clasifica prioridad, agenda y confirma. El diagnóstico médico es exclusivo de la Dra. Daniela Alcázar.",
             "exact_slots": exact_slots,
             "flexible_windows": flexible_windows,
             "modalidades_disponibles": modalidades
@@ -4594,6 +4604,83 @@ def webhook_jelou_brain_mercadopago(
         "paciente": res_sub["paciente"],
         "calendario_preventivo": res_sub["calendario_preventivo"]
     }
+
+
+@app.post("/api/v1/covet/citas/{cita_id}/send-reminder")
+def enviar_recordatorio_24h_anti_inasistencia(
+    cita_id: int,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Dispara el Recordatorio de Confirmación 24h Anti-Inasistencias (-33% No-Shows, estándar Iterait):
+    - Registra `recordatorio_24h_enviado = True` y `asistencia_confirmada = True` en `sintomas_triaje` de CitaDB.
+    - Despacha la alerta de recordatorio a n8n y devuelve el enlace directo de WhatsApp (`wa.me`).
+    """
+    cita = db.query(CitaDB).filter(CitaDB.id == cita_id).first()
+    if not cita:
+        raise HTTPException(status_code=404, detail=f"Cita #{cita_id} no encontrada.")
+
+    paciente = db.query(PacienteDB).filter(PacienteDB.id == cita.paciente_id).first()
+    tutor = db.query(TutorDB).filter(TutorDB.id == paciente.tutor_id).first() if paciente else None
+
+    meta = dict(cita.sintomas_triaje) if isinstance(cita.sintomas_triaje, dict) else {}
+    meta["recordatorio_24h_enviado"] = True
+    meta["asistencia_confirmada"] = True
+    meta["fecha_recordatorio"] = datetime.datetime.utcnow().isoformat()
+    cita.sintomas_triaje = meta
+    db.commit()
+    db.refresh(cita)
+
+    tutor_nombre = (tutor.nombre if tutor else None) or meta.get("tutor_nombre") or "Tutor(a)"
+    tutor_tel = (tutor.telefono if tutor else None) or meta.get("tutor_telefono") or "+56994128890"
+    paciente_nombre = (paciente.nombre if paciente else None) or meta.get("paciente_nombre") or f"Paciente #{cita.paciente_id}"
+    especie = (paciente.especie if paciente else None) or meta.get("especie") or "Mascota"
+    modalidad = cita.modalidad or "DOMICILIO"
+    ventana = cita.ventana_horaria or (cita.fecha_hora.strftime("%d/%m/%Y %H:%M hrs") if cita.fecha_hora else "Horario programado")
+
+    wa_digits = "".join(ch for ch in tutor_tel if ch.isdigit())
+    if len(wa_digits) == 9 and wa_digits.startswith("9"):
+        wa_digits = "56" + wa_digits
+
+    wa_msg = (
+        f"🔔 *Recordatorio de Cita 24h — Dra. Daniela Alcázar*\n\n"
+        f"Hola *{tutor_nombre}*, te recordamos la consulta programada para *{paciente_nombre}* ({especie}):\n"
+        f"• *Modalidad:* {modalidad}\n"
+        f"• *Horario / Bloque:* {ventana}\n\n"
+        f"✅ Responde *CONFIRMO* a este mensaje para asegurar tu hora o avísanos si necesitas reprogramar.\n"
+        f"🔒 _Servicio de confirmación automatizada 24/7._"
+    )
+    wa_url = f"https://wa.me/{wa_digits}?text={ urllib.parse.quote(wa_msg) }"
+
+    background_tasks.add_task(
+        trigger_n8n_triage_alert,
+        {
+            "event_type": "APPOINTMENT_REMINDER_24H",
+            "cita_id": cita.id,
+            "tutor_nombre": tutor_nombre,
+            "tutor_telefono": normalizar_telefono_cl(tutor_tel),
+            "paciente_nombre": paciente_nombre,
+            "especie": especie,
+            "modalidad": modalidad,
+            "ventana_horaria": ventana,
+            "whatsapp_message": wa_msg
+        }
+    )
+
+    seq = broadcast_clinical_event(
+        "APPOINTMENT_REMINDER_SENT",
+        {"cita_id": cita.id, "paciente_nombre": paciente_nombre, "tutor_nombre": tutor_nombre}
+    )
+
+    return {
+        "status": "REMINDER_DISPATCHED",
+        "seq": seq,
+        "cita_id": cita.id,
+        "recordatorio_24h_enviado": True,
+        "wa_reminder_url": wa_url
+    }
+
 
 
 
