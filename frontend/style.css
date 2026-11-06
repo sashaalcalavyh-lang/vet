@@ -4607,16 +4607,10 @@ body[data-active-view="client"] .theme-toggle-btn {
   display: grid;
   grid-template-columns: 1fr;
   gap: 1.35rem;
-  margin-bottom: 1.75rem;
+  margin: 0 auto 1.75rem auto;
   min-width: 0;
-  max-width: 100%;
-}
-
-@media (min-width: 960px) {
-  .daniela-pricing-section {
-    grid-template-columns: 1.25fr 0.95fr;
-    align-items: start;
-  }
+  max-width: 780px;
+  width: 100%;
 }
 
 .daniela-pricing-card {

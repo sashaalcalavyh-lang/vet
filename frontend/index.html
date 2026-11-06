@@ -1,32 +1,40 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
   <title>CoVet — Micro-App de Triaje Clínico & Fichas con IA</title>
-  <meta name="description" content="Plataforma médica veterinaria: triaje clínico inteligente para tutores, primeros auxilios y dictado SOAP con IA para veterinarios.">
+  <meta name="description"
+    content="Plataforma médica veterinaria: triaje clínico inteligente para tutores, primeros auxilios y dictado SOAP con IA para veterinarios.">
   <meta name="theme-color" content="#0d9488">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
+
 <body class="theme-light" data-theme="clinical-light" data-active-view="client">
   <div class="app-wrapper">
     <!-- Barra Superior de Control: Switch Triple de Entrada + Selector de Tema -->
     <header class="top-control-bar">
       <div class="mode-switch-pill" role="tablist">
-        <button class="mode-btn active" id="btn-mode-client" data-mode="client" role="tab" aria-selected="true" title="Micro-App de Intención para Tutores">
+        <button class="mode-btn active" id="btn-mode-client" data-mode="client" role="tab" aria-selected="true"
+          title="Micro-App de Intención para Tutores">
           <span class="mode-icon">🐾</span>
           <span class="mode-text">Vista Tutor</span>
         </button>
-        <button class="mode-btn" id="btn-mode-vet" data-mode="vet" role="tab" aria-selected="false" title="Panel Clínico Médico Veterinario">
+        <button class="mode-btn" id="btn-mode-vet" data-mode="vet" role="tab" aria-selected="false"
+          title="Panel Clínico Médico Veterinario">
           <span class="mode-icon">🩺</span>
           <span class="mode-text">Modo Veterinario</span>
         </button>
-        <button class="mode-btn mode-btn-admin" id="btn-mode-admin" data-mode="admin" role="tab" aria-selected="false" title="Panel Ejecutivo SuperAdmin Sasha">
+        <button class="mode-btn mode-btn-admin" id="btn-mode-admin" data-mode="admin" role="tab" aria-selected="false"
+          title="Panel Ejecutivo SuperAdmin Sasha">
           <span class="mode-icon">⚡</span>
           <span class="mode-text">Sasha Admin</span>
         </button>
@@ -48,33 +56,35 @@
         <div class="client-trust-badge">
           <div class="trust-icon-box daniela-accent-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+              <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07" />
             </svg>
           </div>
           <div class="trust-texts">
             <span class="trust-title" id="client-header-brand-title">Dra. Daniela Alcázar</span>
-            <span class="trust-sub" id="client-header-brand-sub">Atención Veterinaria a Domicilio · Estándar Clínico & Ley 21.719</span>
+            <span class="trust-sub" id="client-header-brand-sub">Atención Veterinaria a Domicilio y Telemedicina · Estándar Clínico &
+              Ley 21.719</span>
           </div>
         </div>
         <div class="trust-status-pill">
           <span class="live-dot"></span>
-          <span>Atención a Domicilio Activa</span>
+          <span>Domicilio & Telemedicina Activos</span>
         </div>
       </div>
 
       <!-- HERO SECTION DE CONFIANZA — DRA. DANIELA ALCÁZAR -->
       <div class="daniela-hero-banner glass-panel" id="daniela-hero-section">
         <div class="daniela-hero- pills-row">
-          <span class="daniela-pill-magenta">🩺 Medicina Veterinaria Preventiva & Domicilio</span>
+          <span class="daniela-pill-magenta">🩺 Medicina Veterinaria Preventiva, Domicilio & Telemedicina</span>
           <span class="daniela-pill-purple">✨ Sin Estrés de Traslado</span>
-          <span class="daniela-pill-orange">🐾 Perros y Gatos</span>
+          <span class="daniela-pill-orange">🐾 Caninos, Felinos, Conejos, Cuy y Erizos</span>
         </div>
 
         <h1 class="daniela-hero-title" id="daniela-main-heading">
-          Dra. Daniela Alcázar - Atención Veterinaria a Domicilio
+          Dra. Daniela Alcázar - Atención Veterinaria a Domicilio y Telemedicina
         </h1>
         <p class="daniela-hero-subtitle" id="daniela-main-subheading">
-          Cuidado médico integral, cálido y profesional en la tranquilidad de tu hogar. Protege la salud de tu mascota todo el año con seguimiento clínico digital 24/7, vacunas al día y atención prioritaria.
+          Cuidado médico integral, cálido y profesional en la tranquilidad de tu hogar o vía Telemedicina. Protege la salud de tu mascota
+          todo el año con seguimiento clínico digital 24/7, vacunas al día y atención prioritaria.
         </p>
 
         <div class="daniela-hero-cta-row">
@@ -82,7 +92,7 @@
             <span>💖</span> Ver Membresía Cuidado Continuo ($8.990/mes)
           </a>
           <a href="#client-intent-hero" class="btn-daniela-secondary-cta">
-            <span>🎙️</span> Evaluar Síntomas / Agendar Consulta Ahora
+            <span>💻</span> Agendar Visita a Domicilio o Telemedicina
           </a>
         </div>
 
@@ -112,7 +122,8 @@
           <div class="pricing-card-header">
             <div class="pricing-plan-tag">Cuidado Preventivo Integral en Casa</div>
             <h2 class="pricing-plan-title">Membresía Cuidado Continuo</h2>
-            <p class="pricing-plan-desc">Todo lo que tu mascota necesita para mantenerse sana, protegida y con su calendario clínico al día durante todo el año.</p>
+            <p class="pricing-plan-desc">Todo lo que tu mascota necesita para mantenerse sana, protegida y con su
+              calendario clínico al día durante todo el año.</p>
 
             <div class="pricing-amount-box">
               <span class="pricing-currency">$</span>
@@ -133,7 +144,8 @@
             <li class="pricing-benefit-item">
               <span class="benefit-check-icon" aria-hidden="true">✓</span>
               <div class="benefit-text">
-                <strong>Cobertura Anual:</strong> Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de suscripción (o antes si llevan meses acumulados).
+                <strong>Cobertura Anual:</strong> Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de
+                suscripción (o antes si llevan meses acumulados).
               </div>
             </li>
             <li class="pricing-benefit-item">
@@ -151,13 +163,15 @@
             <li class="pricing-benefit-item">
               <span class="benefit-check-icon accent-purple" aria-hidden="true">✓</span>
               <div class="benefit-text">
-                <strong>Historial Clínico en Vivo:</strong> Acceso 24/7 a la app con las fechas de vacunación, desparasitación y notas clínicas de su mascota.
+                <strong>Historial Clínico en Vivo:</strong> Acceso 24/7 a la app con las fechas de vacunación,
+                desparasitación y notas clínicas de su mascota.
               </div>
             </li>
             <li class="pricing-benefit-item">
               <span class="benefit-check-icon" aria-hidden="true">✓</span>
               <div class="benefit-text">
-                <strong>Recordatorios Automáticos:</strong> La app avisa cuándo toca la próxima vacuna o desparasitación.
+                <strong>Recordatorios Automáticos:</strong> La app avisa cuándo toca la próxima vacuna o
+                desparasitación.
               </div>
             </li>
           </ul>
@@ -174,31 +188,18 @@
             </p>
           </div>
         </div>
-
-        <!-- WIDGET DE ACCESO 24/7 AL HISTORIAL CLÍNICO EN VIVO & RECORDATORIOS -->
-        <div class="daniela-live-carnet-card glass-panel" id="daniela-live-carnet-section">
-          <div class="live-carnet-header">
-            <span class="carnet-badge-purple">📱 HISTORIAL CLÍNICO EN VIVO 24/7</span>
-            <h3>Consulta el Carné, Vacunas y Notas Clínicas de tu Mascota</h3>
-            <p>Si ya eres parte de la Membresía Cuidado Continuo o te atendiste con la Dra. Daniela Alcázar, revisa aquí tus próximas fechas de vacuna, desparasitación y recetas en PDF:</p>
-          </div>
-          <div class="live-carnet-search-bar">
-            <input type="text" id="input-carnet-lookup" class="clinical-input" placeholder="Ingresa tu WhatsApp (+569...) o el nombre de tu mascota (ej: Max, Luna)...">
-            <button type="button" class="btn-carnet-search" id="btn-carnet-lookup">
-              🔍 Ver Historial 24/7
-            </button>
-          </div>
-          <div class="live-carnet-results hidden" id="live-carnet-results"></div>
-        </div>
       </div>
 
       <!-- ESTADO 1: LIENZO MINIMALISTA DE INTENCIÓN (TRIAJE CLÍNICO CON IA COVET) -->
       <div class="client-intent-hero" id="client-intent-hero">
         <div class="glass-panel client-canvas-card">
           <div class="client-canvas-header">
-            <span class="daniela-pill-magenta" style="margin-bottom: 0.5rem; display: inline-block;">🤖 Asistente Clínico de Triaje & Agenda a Domicilio</span>
-            <h2 class="client-main-title">¿Tu mascota presenta síntomas hoy o necesitas agendar visita?</h2>
-            <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el nivel de urgencia, te entregará primeros auxilios y coordinará tu visita a domicilio con la Dra. Daniela Alcázar.</p>
+            <span class="daniela-pill-magenta" style="margin-bottom: 0.5rem; display: inline-block;">🤖 Asistente
+              Clínico de Triaje · Agenda a Domicilio & Telemedicina</span>
+            <h2 class="client-main-title">¿Tu mascota presenta síntomas hoy o necesitas agendar una consulta ?</h2>
+            <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el nivel de
+              urgencia, te entregará primeros auxilios y coordinará tu visita a domicilio ó telemedicina con la Dra.
+              Daniela Alcázar.</p>
           </div>
 
           <!-- Botón Central de Micrófono -->
@@ -208,9 +209,9 @@
               <div class="mic-wave-ring outer"></div>
               <div class="mic-icon-inner">
                 <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                  <line x1="12" x2="12" y1="19" y2="22"/>
+                  <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" x2="12" y1="19" y2="22" />
                 </svg>
               </div>
             </button>
@@ -219,29 +220,30 @@
 
           <!-- Barra de Texto Estilizada -->
           <div class="client-input-bar">
-            <input type="text" id="client-intent-input" class="client-input-field" placeholder="O escribe aquí sus síntomas (ej: Mi gato vomitó espuma y está decaído)...">
+            <input type="text" id="client-intent-input" class="client-input-field"
+              placeholder="O escribe aquí sus síntomas o solicita hora (ej: Necesito telemedicina o visita a domicilio)...">
             <button class="btn-client-send" id="btn-client-send" title="Evaluar con Agente IA">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="22" y1="2" x2="11" y2="13"/>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
               </svg>
             </button>
           </div>
 
           <!-- Chips de Ejemplo Rápido Clickables para Demos -->
           <div class="client-demo-chips">
-            <span class="chips-hint">Ejemplos para demos:</span>
+            <span class="chips-hint">Accesos rápidos:</span>
+            <button type="button" class="intent-chip routine" data-intent="Necesito agendar consulta por Telemedicina con la Dra. Daniela">
+              <span>💻</span> Agendar Consulta por Telemedicina
+            </button>
+            <button type="button" class="intent-chip routine" data-intent="Necesito agendar vacuna o control sano a domicilio">
+              <span>🏠</span> Agendar Visita a Domicilio
+            </button>
             <button type="button" class="intent-chip danger" data-intent="Mi gato vomitó y está decaído">
               <span>🚨</span> Mi gato vomitó y está decaído
             </button>
-            <button type="button" class="intent-chip routine" data-intent="Necesito agendar vacuna anual a domicilio">
-              <span>💉</span> Necesito agendar vacuna anual a domicilio
-            </button>
-            <button type="button" class="intent-chip danger" data-intent="Mi perro comió veneno o planta tóxica y no para de jadear">
-              <span>⚠️</span> Ingesta de tóxico / jadeo
-            </button>
-            <button type="button" class="intent-chip" data-intent="Cojera repentina en pata trasera tras una caída">
-              <span>🐾</span> Cojera aguda tras caída
+            <button type="button" class="intent-chip" data-intent="Consulta para mi conejo, cuy o erizo que dejó de comer">
+              <span>🐰</span> Consulta Conejo, Cuy o Erizo
             </button>
           </div>
         </div>
@@ -253,7 +255,8 @@
           <div class="radar-dot"></div>
         </div>
         <h3 class="evaluating-title">Agente CoVet evaluando síntomas y disponibilidad...</h3>
-        <p class="evaluating-sub">Clasificando urgencia vital con IA, asignando protocolo de primeros auxilios y consultando agenda en tiempo real.</p>
+        <p class="evaluating-sub">Clasificando urgencia vital con IA, asignando protocolo de primeros auxilios y
+          consultando agenda en tiempo real.</p>
       </div>
 
       <!-- ESTADO 3: TRANSFORMACIÓN DINÁMICA (TRIAJE, PREGUNTAS Y AGENDA HÍBRIDA) -->
@@ -265,7 +268,8 @@
             <span class="triage-species-tag" id="triage-species-tag">🐱 Felino</span>
             <h2 class="triage-motivo-title" id="triage-motivo-title">Vómito agudo felino</h2>
           </div>
-          <p class="triage-recommendation-text" id="triage-recommendation-text">Nuestro Agente Clínico ha categorizado este cuadro para atención médica prioritaria.</p>
+          <p class="triage-recommendation-text" id="triage-recommendation-text">Nuestro Agente Clínico ha categorizado
+            este cuadro para atención médica prioritaria.</p>
         </div>
 
         <!-- Formulario de Identificación y Preguntas Clínicas -->
@@ -273,13 +277,15 @@
           <!-- B) Identificación Rápida por WhatsApp -->
           <div class="form-section-header">
             <h3>1. Identificación del Paciente y Tutor</h3>
-            <p>Cruzamos el número con nuestro historial clínico para que el veterinario tenga sus antecedentes previos.</p>
+            <p>Cruzamos el número con nuestro historial clínico para que el veterinario tenga sus antecedentes previos.
+            </p>
           </div>
 
           <div class="form-grid-3">
             <div class="clinical-field">
               <label for="client-tutor-phone">WhatsApp del Tutor (+569...) *</label>
-              <input type="tel" id="client-tutor-phone" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$" class="clinical-input font-mono">
+              <input type="tel" id="client-tutor-phone" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$"
+                class="clinical-input font-mono">
             </div>
             <div class="clinical-field">
               <label for="client-tutor-name">Tu Nombre y Apellido *</label>
@@ -305,7 +311,7 @@
             <h3>3. Modalidad y Horario de Atención</h3>
             <p id="schedule-intro-text">Selecciona la modalidad y franja horaria que mejor se adapte a tu situación:</p>
           </div>
-          
+
           <div class="hybrid-schedule-container" id="hybrid-schedule-container">
             <!-- Se inyecta dinámicamente según urgency_level (HIGH vs MEDIUM/LOW) -->
           </div>
@@ -317,21 +323,25 @@
             <label class="privacy-checkbox-label" for="client-consent-ley21719">
               <input type="checkbox" id="client-consent-ley21719" required checked class="privacy-checkbox">
               <span class="privacy-consent-text">
-                <strong>(Obligatorio)</strong> Acepto el tratamiento de mis datos de contacto para la gestión médica, reserva y atención clínica veterinaria de mi mascota (Base legal: relación contractual).
+                <strong>(Obligatorio)</strong> Acepto el tratamiento de mis datos de contacto para la gestión médica,
+                reserva y atención clínica veterinaria de mi mascota (Base legal: relación contractual).
               </span>
             </label>
 
             <label class="privacy-checkbox-label" for="client-consent-whatsapp">
               <input type="checkbox" id="client-consent-whatsapp" checked class="privacy-checkbox">
               <span class="privacy-consent-text">
-                <strong>(Opcional)</strong> Autorizo el envío de recetas médicas oficiales, recordatorios de dosis y confirmaciones de cita directamente a mi <strong>WhatsApp</strong>.
+                <strong>(Opcional)</strong> Autorizo el envío de recetas médicas oficiales, recordatorios de dosis y
+                confirmaciones de cita directamente a mi <strong>WhatsApp</strong>.
               </span>
             </label>
 
             <label class="privacy-checkbox-label" for="client-consent-ia">
               <input type="checkbox" id="client-consent-ia" checked class="privacy-checkbox">
               <span class="privacy-consent-text">
-                <strong>(Opcional)</strong> Autorizo el triaje preliminar asistido por Inteligencia Artificial y la transferencia internacional segura de datos a servidores en EE.UU. (Groq Inc. / Anthropic PBC) conforme al <strong>Art. 26 de la Ley 21.719</strong>.
+                <strong>(Opcional)</strong> Autorizo el triaje preliminar asistido por Inteligencia Artificial y la
+                transferencia internacional segura de datos a servidores en EE.UU. (Groq Inc. / Anthropic PBC) conforme
+                al <strong>Art. 26 de la Ley 21.719</strong>.
               </span>
             </label>
 
@@ -357,7 +367,8 @@
           <div class="recognized-icon">✨</div>
           <div class="recognized-content">
             <strong id="patient-recognized-title">¡Hola de nuevo!</strong>
-            <p id="patient-recognized-text">El Agente CoVet encontró el historial clínico previo de tu mascota y ya lo adjuntó para el veterinario.</p>
+            <p id="patient-recognized-text">El Agente CoVet encontró el historial clínico previo de tu mascota y ya lo
+              adjuntó para el veterinario.</p>
           </div>
         </div>
 
@@ -405,7 +416,8 @@
                 Abrir Pasarela de Pago Oficial (MercadoPago / Webpay) ↗
               </a>
             </div>
-            <p class="pay-note">Simulación 1-Clic para Demos de Venta: confirma la reserva en PostgreSQL y notifica de inmediato al veterinario.</p>
+            <p class="pay-note">Simulación 1-Clic para Demos de Venta: confirma la reserva en PostgreSQL y notifica de
+              inmediato al veterinario.</p>
           </div>
         </div>
       </div>
@@ -446,7 +458,8 @@
           <div class="protocol-tutor-message" id="protocol-tutor-message"></div>
 
           <div class="clinical-disclaimer">
-            <span>⚖️ <strong>Aviso de Seguridad Clínica:</strong> Guía preventiva de contención validada. No reemplaza el examen físico ni autoriza automedicación veterinaria.</span>
+            <span>⚖️ <strong>Aviso de Seguridad Clínica:</strong> Guía preventiva de contención validada. No reemplaza
+              el examen físico ni autoriza automedicación veterinaria.</span>
           </div>
         </div>
 
@@ -472,7 +485,7 @@
           <div class="brand">
             <div class="brand-logo">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
+                <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07" />
               </svg>
             </div>
             <div>
@@ -482,10 +495,12 @@
           </div>
 
           <div class="header-status">
-            <button type="button" class="btn-dpa-badge" id="btn-vet-dpa-status" title="Contrato de Encargo de Tratamiento de Datos Ley 21.719">
+            <button type="button" class="btn-dpa-badge" id="btn-vet-dpa-status"
+              title="Contrato de Encargo de Tratamiento de Datos Ley 21.719">
               <span class="dpa-icon">🛡️</span> <span id="vet-dpa-label">Escudo Ley 21.719</span>
             </button>
-            <button type="button" class="btn-sun-mode-toggle" id="btn-toggle-sun-mode" title="Modo Terreno Alto Contraste (Sol Directo)">
+            <button type="button" class="btn-sun-mode-toggle" id="btn-toggle-sun-mode"
+              title="Modo Terreno Alto Contraste (Sol Directo)">
               <span id="sun-mode-icon">☀️</span> <span id="sun-mode-label">Sol Directo</span>
             </button>
             <div class="status-pill" id="backend-status-pill" title="Servidor VPS Hetzner">
@@ -539,7 +554,8 @@
               <div class="idle-header">
                 <span class="mode-badge">⚡ Asistente Clínico de Voz</span>
                 <h2>Dictado en Terreno</h2>
-                <p>Habla con naturalidad durante la consulta. La IA transcribirá con Groq Whisper y estructurará el estándar SOAP con Claude.</p>
+                <p>Habla con naturalidad durante la consulta. La IA transcribirá con Groq Whisper y estructurará el
+                  estándar SOAP con Claude.</p>
               </div>
 
               <!-- Barra de Sincronización Colaborativa Técnico ➔ Veterinario en Tiempo Real -->
@@ -557,7 +573,8 @@
               <div class="collab-tech-panel hidden" id="collab-tech-panel">
                 <div class="collab-tech-header">
                   <strong>🧑‍🔬 Admisión Rápida por Técnico Veterinario</strong>
-                  <p>Carga los datos iniciales y constantes vitales; aparecerán al instante en la pantalla del Médico Veterinario.</p>
+                  <p>Carga los datos iniciales y constantes vitales; aparecerán al instante en la pantalla del Médico
+                    Veterinario.</p>
                 </div>
                 <div class="form-grid-2">
                   <div class="input-group">
@@ -579,29 +596,37 @@
                     <select id="tech-paciente-especie" class="glass-input">
                       <option value="Canino">Canino 🐶</option>
                       <option value="Felino">Felino 🐱</option>
+                      <option value="Conejo">Conejo 🐰</option>
+                      <option value="Cuy">Cuy 🐹</option>
+                      <option value="Erizo">Erizo 🦔</option>
                       <option value="Exótico">Exótico 🦜</option>
                     </select>
                   </div>
                   <div class="input-group">
                     <label for="tech-paciente-peso">Peso (kg)</label>
-                    <input type="number" id="tech-paciente-peso" step="0.1" min="0" placeholder="Ej: 18.4" class="glass-input">
+                    <input type="number" id="tech-paciente-peso" step="0.1" min="0" placeholder="Ej: 18.4"
+                      class="glass-input">
                   </div>
                 </div>
                 <div class="form-grid-2" style="margin-top: 0.65rem;">
                   <div class="input-group">
                     <label for="tech-paciente-raza">Raza / Edad</label>
-                    <input type="text" id="tech-paciente-raza" placeholder="Ej: Pastor Alemán, 4 años" class="glass-input">
+                    <input type="text" id="tech-paciente-raza" placeholder="Ej: Pastor Alemán, 4 años"
+                      class="glass-input">
                   </div>
                   <div class="input-group">
                     <label for="tech-constantes">Constantes Previas (T°, FC, FR, Mucosas)</label>
-                    <input type="text" id="tech-constantes" placeholder="Ej: T° 38.6°C, FC 92 lpm, mucosas rosadas" class="glass-input">
+                    <input type="text" id="tech-constantes" placeholder="Ej: T° 38.6°C, FC 92 lpm, mucosas rosadas"
+                      class="glass-input">
                   </div>
                 </div>
                 <div class="input-group" style="margin-top: 0.65rem;">
                   <label for="tech-motivo">Motivo de Ingreso / Triaje Inicial *</label>
-                  <input type="text" id="tech-motivo" placeholder="Ej: Otitis bilateral y sacudida de cabeza hace 3 días" class="glass-input">
+                  <input type="text" id="tech-motivo"
+                    placeholder="Ej: Otitis bilateral y sacudida de cabeza hace 3 días" class="glass-input">
                 </div>
-                <div class="collab-tech-actions" style="margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                <div class="collab-tech-actions"
+                  style="margin-top: 0.85rem; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                   <button type="button" class="btn-action-primary" id="btn-submit-tech-intake" style="flex: 1;">
                     ⚡ Sincronizar en Vivo con Pantalla del Veterinario
                   </button>
@@ -610,7 +635,8 @@
 
               <!-- Selector Opcional de Cita Previa -->
               <div class="appointment-selector-box">
-                <label for="select-cita-contexto">Vincular a cita o admisión de técnico (pre-carga datos en SOAP):</label>
+                <label for="select-cita-contexto">Vincular a cita o admisión de técnico (pre-carga datos en
+                  SOAP):</label>
                 <select id="select-cita-contexto" class="custom-select">
                   <option value="">-- Consulta espontánea / Sin cita previa --</option>
                 </select>
@@ -621,10 +647,11 @@
               <div class="mic-trigger-wrapper">
                 <button class="btn-mic-main" id="btn-start-record" aria-label="Iniciar dictado clínico">
                   <div class="mic-icon-circle">
-                    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                      <line x1="12" x2="12" y1="19" y2="22"/>
+                    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                      stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                      <line x1="12" x2="12" y1="19" y2="22" />
                     </svg>
                   </div>
                   <span class="mic-btn-label">Tocar para Dictar Ficha SOAP</span>
@@ -636,7 +663,8 @@
               <details class="text-dictation-details" id="text-dictation-details">
                 <summary>⌨️ Dictado por Texto o Prueba Multi-Paciente (2+ mascotas en 1 sesión)</summary>
                 <div class="text-dictation-body">
-                  <textarea id="input-text-dictation" rows="3" class="glass-textarea" placeholder="Escribe o pega el dictado de 1 o varias mascotas atendidas en la misma visita..."></textarea>
+                  <textarea id="input-text-dictation" rows="3" class="glass-textarea"
+                    placeholder="Escribe o pega el dictado de 1 o varias mascotas atendidas en la misma visita..."></textarea>
                   <div class="text-dictation-actions">
                     <button type="button" class="btn-outline-small" id="btn-demo-multipatient-text">
                       🐾 Cargar Ejemplo 2 Mascotas (Max + Luna)
@@ -689,12 +717,17 @@
               </div>
 
               <div class="waveform-visualizer">
-                <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
-                <div class="wave-bar"></div><div class="wave-bar"></div><div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
+                <div class="wave-bar"></div>
                 <div class="wave-bar"></div>
               </div>
 
-              <p class="recording-instruction">Dicta la consulta en voz alta. Al finalizar, pulsa detener para estructurar.</p>
+              <p class="recording-instruction">Dicta la consulta en voz alta. Al finalizar, pulsa detener para
+                estructurar.</p>
 
               <div class="recording-actions">
                 <button class="btn-rec-stop" id="btn-stop-record">
@@ -724,10 +757,14 @@
               </div>
 
               <div class="ai-steps-checklist">
-                <div class="step-item active" id="step-upload"><span class="step-dot"></span><span>Subida de audio seguro</span></div>
-                <div class="step-item" id="step-whisper"><span class="step-dot"></span><span>Transcripción con Groq Whisper Large</span></div>
-                <div class="step-item" id="step-claude"><span class="step-dot"></span><span>Estructuración SOAP con Anthropic Claude</span></div>
-                <div class="step-item" id="step-ready"><span class="step-dot"></span><span>Listo para revisión médica</span></div>
+                <div class="step-item active" id="step-upload"><span class="step-dot"></span><span>Subida de audio
+                    seguro</span></div>
+                <div class="step-item" id="step-whisper"><span class="step-dot"></span><span>Transcripción con Groq
+                    Whisper Large</span></div>
+                <div class="step-item" id="step-claude"><span class="step-dot"></span><span>Estructuración SOAP con
+                    Anthropic Claude</span></div>
+                <div class="step-item" id="step-ready"><span class="step-dot"></span><span>Listo para revisión
+                    médica</span></div>
               </div>
 
               <div class="error-banner hidden" id="processing-error-banner">
@@ -751,7 +788,8 @@
                   <p>Revisa y edita los datos antes de guardarlos en PostgreSQL y despachar el resumen por WhatsApp.</p>
                 </div>
                 <div class="review-header-actions">
-                  <button type="button" class="btn-tts-listen" id="btn-tts-soap" title="Leer en voz alta diagnóstico y plan terapéutico">
+                  <button type="button" class="btn-tts-listen" id="btn-tts-soap"
+                    title="Leer en voz alta diagnóstico y plan terapéutico">
                     <span class="tts-icon">🔊</span> <span id="tts-label">Escuchar Resumen SOAP</span>
                   </button>
                   <button class="btn-outline-small" id="btn-discard-review">✕ Descartar</button>
@@ -779,11 +817,13 @@
                   <div class="form-grid-2">
                     <div class="input-group">
                       <label for="review-tutor-nombre">Nombre del Tutor/Dueño *</label>
-                      <input type="text" id="review-tutor-nombre" required placeholder="Ej: Marcela Soto" class="glass-input">
+                      <input type="text" id="review-tutor-nombre" required placeholder="Ej: Marcela Soto"
+                        class="glass-input">
                     </div>
                     <div class="input-group">
                       <label for="review-tutor-telefono">WhatsApp Tutor (+569XXXXXXXX) *</label>
-                      <input type="tel" id="review-tutor-telefono" required placeholder="+56912345678" pattern="^(\+?56)?9\d{8}$" class="glass-input font-mono">
+                      <input type="tel" id="review-tutor-telefono" required placeholder="+56912345678"
+                        pattern="^(\+?56)?9\d{8}$" class="glass-input font-mono">
                     </div>
                   </div>
                 </section>
@@ -797,13 +837,17 @@
                   <div class="form-grid-3">
                     <div class="input-group">
                       <label for="review-paciente-nombre">Nombre Paciente *</label>
-                      <input type="text" id="review-paciente-nombre" required placeholder="Ej: Rocky" class="glass-input">
+                      <input type="text" id="review-paciente-nombre" required placeholder="Ej: Rocky"
+                        class="glass-input">
                     </div>
                     <div class="input-group">
                       <label for="review-especie">Especie *</label>
                       <select id="review-especie" class="glass-input" required>
                         <option value="Canino">Canino 🐶</option>
                         <option value="Felino">Felino 🐱</option>
+                        <option value="Conejo">Conejo 🐰</option>
+                        <option value="Cuy">Cuy 🐹</option>
+                        <option value="Erizo">Erizo 🦔</option>
                         <option value="Exótico">Exótico 🦜</option>
                         <option value="Equino">Equino 🐴</option>
                         <option value="Otro">Otro 🐾</option>
@@ -821,7 +865,8 @@
                     </div>
                     <div class="input-group">
                       <label for="review-peso">Peso (kg)</label>
-                      <input type="number" id="review-peso" step="0.1" min="0" placeholder="Ej: 14.5" class="glass-input">
+                      <input type="number" id="review-peso" step="0.1" min="0" placeholder="Ej: 14.5"
+                        class="glass-input">
                     </div>
                   </div>
                 </section>
@@ -835,27 +880,35 @@
                   <div class="soap-fields-container">
                     <div class="soap-field-group">
                       <div class="soap-tag s-tag">S • Subjetivo / Anamnesis</div>
-                      <textarea id="review-anamnesis" rows="3" class="glass-textarea auto-resize" placeholder="Motivo de consulta y síntomas..."></textarea>
+                      <textarea id="review-anamnesis" rows="3" class="glass-textarea auto-resize"
+                        placeholder="Motivo de consulta y síntomas..."></textarea>
                     </div>
                     <div class="soap-field-group">
                       <div class="soap-tag o-tag">O • Objetivo / Examen Físico</div>
-                      <textarea id="review-examen-fisico" rows="3" class="glass-textarea auto-resize" placeholder="Temperatura, constantes vitales (FC, FR), mucosas..."></textarea>
+                      <textarea id="review-examen-fisico" rows="3" class="glass-textarea auto-resize"
+                        placeholder="Temperatura, constantes vitales (FC, FR), mucosas..."></textarea>
                     </div>
                     <div class="soap-field-group">
                       <div class="soap-tag a-tag">A • Análisis / Diagnóstico</div>
-                      <textarea id="review-diagnostico" rows="2" class="glass-textarea auto-resize" placeholder="Diagnóstico presuntivo..."></textarea>
+                      <textarea id="review-diagnostico" rows="2" class="glass-textarea auto-resize"
+                        placeholder="Diagnóstico presuntivo..."></textarea>
                     </div>
                     <div class="soap-field-group">
                       <div class="soap-tag p-tag">P • Plan Terapéutico & Receta</div>
-                      <textarea id="review-plan-terapeutico" rows="4" class="glass-textarea auto-resize" placeholder="Tratamiento aplicado y receta médica..."></textarea>
+                      <textarea id="review-plan-terapeutico" rows="4" class="glass-textarea auto-resize"
+                        placeholder="Tratamiento aplicado y receta médica..."></textarea>
                     </div>
                     <div class="soap-field-group">
                       <div class="soap-tag next-tag">📅 Próximos Pasos & Control</div>
-                      <textarea id="review-proximos-pasos" rows="2" class="glass-textarea auto-resize" placeholder="Fecha de control o vacunas..."></textarea>
+                      <textarea id="review-proximos-pasos" rows="2" class="glass-textarea auto-resize"
+                        placeholder="Fecha de control o vacunas..."></textarea>
                     </div>
                     <div class="soap-field-group">
-                      <div class="soap-tag s-tag" style="background: rgba(13, 148, 136, 0.16); color: var(--teal-primary, #0D9488);">💬 Resumen Amigable para el Tutor (En Lenguaje Sencillo sin Tecnicismos)</div>
-                      <textarea id="review-resumen-amigable" rows="2" class="glass-textarea auto-resize" placeholder="Explicación cálida y en palabras sencillas para el dueño sobre el estado y cuidados de su mascota..."></textarea>
+                      <div class="soap-tag s-tag"
+                        style="background: rgba(13, 148, 136, 0.16); color: var(--teal-primary, #0D9488);">💬 Resumen
+                        Amigable para el Tutor (En Lenguaje Sencillo sin Tecnicismos)</div>
+                      <textarea id="review-resumen-amigable" rows="2" class="glass-textarea auto-resize"
+                        placeholder="Explicación cálida y en palabras sencillas para el dueño sobre el estado y cuidados de su mascota..."></textarea>
                     </div>
                   </div>
                 </section>
@@ -872,7 +925,8 @@
                     <input type="checkbox" id="review-consent-presencial" checked>
                     <div class="consent-label-body">
                       <strong>✓ Consentimiento Clínico Presencial (Ley 21.719):</strong>
-                      <p>Confirmo que el tutor autorizó en consulta el registro clínico digital y envío de su receta por WhatsApp.</p>
+                      <p>Confirmo que el tutor autorizó en consulta el registro clínico digital y envío de su receta por
+                        WhatsApp.</p>
                     </div>
                   </label>
                 </div>
@@ -947,6 +1001,9 @@
                     <select id="paciente-especie" required>
                       <option value="Canino">Canino (Perro)</option>
                       <option value="Felino">Felino (Gato)</option>
+                      <option value="Conejo">Conejo 🐰</option>
+                      <option value="Cuy">Cuy 🐹</option>
+                      <option value="Erizo">Erizo 🦔</option>
                       <option value="Exótico">Exótico</option>
                     </select>
                   </div>
@@ -971,7 +1028,8 @@
                 </div>
                 <div class="form-group">
                   <label for="cita-motivo">Motivo Consulta</label>
-                  <textarea id="cita-motivo" rows="2" required placeholder="Ej: Control de vacunas y chequeo"></textarea>
+                  <textarea id="cita-motivo" rows="2" required
+                    placeholder="Ej: Control de vacunas y chequeo"></textarea>
                 </div>
                 <button type="submit" class="btn-submit" id="btn-submit-appointment">
                   <span>Guardar Cita en PostgreSQL</span>
@@ -986,7 +1044,10 @@
                   <p>Citas de triaje (HOLD_15_MIN) y confirmadas</p>
                 </div>
                 <button class="btn-refresh" id="btn-refresh" title="Refrescar lista">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path
+                      d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
                 </button>
               </div>
 
@@ -1007,7 +1068,9 @@
                 <p>Control de vacunas anuales (Óctuple/Triple + Antirrábica), consulta domicilio gratis y carné 24/7</p>
               </div>
               <button class="btn-refresh" id="btn-refresh-memberships" title="Refrescar membresías">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
               </button>
             </div>
             <div class="appointments-container" id="vet-memberships-list">
@@ -1025,10 +1088,13 @@
             <div class="panel-header flex-between">
               <div>
                 <h2>📋 Fichas Clínicas Generadas</h2>
-                <p>Registro histórico de atenciones SOAP, estado de despacho WhatsApp y Epicrisis Longitudinal con IA</p>
+                <p>Registro histórico de atenciones SOAP, estado de despacho WhatsApp y Epicrisis Longitudinal con IA
+                </p>
               </div>
               <button class="btn-refresh" id="btn-refresh-fiches" title="Refrescar fichas">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
               </button>
             </div>
 
@@ -1148,7 +1214,8 @@
         <div class="panel-section-title">
           <div class="vault-header-title">
             <h3>🔐 Bóveda de Respaldo Cifrado (AES-256 • Art. 14Ter Ley 21.719)</h3>
-            <p>Copias en caliente con aislamiento criptográfico, retención legal de 14 días y clave maestra segregada.</p>
+            <p>Copias en caliente con aislamiento criptográfico, retención legal de 14 días y clave maestra segregada.
+            </p>
           </div>
           <div class="vault-badges-row">
             <span class="vault-badge-secure" id="vault-status-badge">
@@ -1181,7 +1248,8 @@
           <div class="vault-kpi-item vault-sha-box">
             <span class="vault-kpi-name">Hash Criptográfico SHA-256</span>
             <div class="vault-sha-interactive">
-              <code class="vault-hash-code" id="vault-sha-display" title="Click en el botón para copiar hash completo">--</code>
+              <code class="vault-hash-code" id="vault-sha-display"
+                title="Click en el botón para copiar hash completo">--</code>
               <button type="button" class="btn-copy-sha" id="btn-copy-vault-sha" title="Copiar Hash SHA-256 completo">
                 <span id="copy-sha-icon">📋</span> Copiar
               </button>
@@ -1196,7 +1264,8 @@
             <span id="btn-vault-trigger-text">Ejecutar Backup Cifrado Ahora</span>
           </button>
           <span class="vault-footer-meta">
-            Bóveda en reposo: <code>/var/backups/covet_encrypted</code> • Llave: <code>/root/.covet_backup.key</code> (Modo 400 RO)
+            Bóveda en reposo: <code>/var/backups/covet_encrypted</code> • Llave: <code>/root/.covet_backup.key</code>
+            (Modo 400 RO)
           </span>
         </div>
       </div>
@@ -1230,47 +1299,55 @@
             <div class="brand-form-group">
               <div class="label-with-action">
                 <label for="brand-input-slug">Slug URL Identificador <span class="req-star">*</span></label>
-                <button type="button" class="btn-load-slug" id="btn-load-branding" title="Cargar datos de slug existente">🔍 Cargar existente</button>
+                <button type="button" class="btn-load-slug" id="btn-load-branding"
+                  title="Cargar datos de slug existente">🔍 Cargar existente</button>
               </div>
               <div class="input-with-prefix">
                 <span class="input-prefix">?vet=</span>
-                <input type="text" id="brand-input-slug" class="clinical-input" placeholder="dra-carolina" required pattern="[a-z0-9-]+" autocomplete="off" />
+                <input type="text" id="brand-input-slug" class="clinical-input" placeholder="dra-carolina" required
+                  pattern="[a-z0-9-]+" autocomplete="off" />
               </div>
-              <small class="brand-field-hint">Auto-formateado en minúsculas y guiones (ej: <code>dra-carolina</code>).</small>
+              <small class="brand-field-hint">Auto-formateado en minúsculas y guiones (ej:
+                <code>dra-carolina</code>).</small>
             </div>
 
             <!-- Nombre Profesional / Título -->
             <div class="brand-form-group">
               <label for="brand-input-name">Nombre Profesional / Título <span class="req-star">*</span></label>
-              <input type="text" id="brand-input-name" class="clinical-input" placeholder="Dra. Carolina Rojas · Veterinaria a Domicilio" required autocomplete="off" />
+              <input type="text" id="brand-input-name" class="clinical-input"
+                placeholder="Dra. Carolina Rojas · Veterinaria a Domicilio" required autocomplete="off" />
               <small class="brand-field-hint">Aparece en cabeceras de atención, recetas y consentimientos.</small>
             </div>
 
             <!-- Razón Social / Responsable Legal Ley 21.719 -->
             <div class="brand-form-group">
               <label for="brand-input-specialty">Razón Social / Responsable Legal Ley 21.719</label>
-              <input type="text" id="brand-input-specialty" class="clinical-input" placeholder="Carolina Rojas Veterinaria EIRL" autocomplete="off" />
+              <input type="text" id="brand-input-specialty" class="clinical-input"
+                placeholder="Carolina Rojas Veterinaria EIRL" autocomplete="off" />
               <small class="brand-field-hint">Responsable formal del Tratamiento de Datos (Data Controller).</small>
             </div>
 
             <!-- RUT Profesional / Empresa -->
             <div class="brand-form-group">
               <label for="brand-input-rut">RUT Profesional / Empresa</label>
-              <input type="text" id="brand-input-rut" class="clinical-input" placeholder="76.987.654-3" autocomplete="off" />
+              <input type="text" id="brand-input-rut" class="clinical-input" placeholder="76.987.654-3"
+                autocomplete="off" />
               <small class="brand-field-hint">Identificación tributaria oficial exigida por Ley 21.719.</small>
             </div>
 
             <!-- Correo Derechos ARSOP+ -->
             <div class="brand-form-group">
               <label for="brand-input-email">Correo Derechos ARSOP+</label>
-              <input type="email" id="brand-input-email" class="clinical-input" placeholder="privacidad@dracarolina.cl" autocomplete="off" />
+              <input type="email" id="brand-input-email" class="clinical-input" placeholder="privacidad@dracarolina.cl"
+                autocomplete="off" />
               <small class="brand-field-hint">Canal formal donde tutores ejercen sus derechos de datos.</small>
             </div>
 
             <!-- WhatsApp del Prospecto -->
             <div class="brand-form-group">
               <label for="brand-input-phone">WhatsApp del Prospecto</label>
-              <input type="tel" id="brand-input-phone" class="clinical-input" placeholder="+56988887777" autocomplete="off" />
+              <input type="tel" id="brand-input-phone" class="clinical-input" placeholder="+56988887777"
+                autocomplete="off" />
               <small class="brand-field-hint">Número destino para demos, alertas y fichas clínicas SOAP.</small>
             </div>
           </div>
@@ -1325,11 +1402,15 @@
 
             <div class="brand-welcome-box">
               <label for="brand-input-welcome" class="brand-subheading">Mensaje de Bienvenida / Slogan:</label>
-              <input type="text" id="brand-input-welcome" class="clinical-input" placeholder="Bienvenido a la consulta veterinaria personalizada con trazabilidad y privacidad garantizada." />
+              <input type="text" id="brand-input-welcome" class="clinical-input"
+                placeholder="Bienvenido a la consulta veterinaria personalizada con trazabilidad y privacidad garantizada." />
               <small class="brand-field-hint">Aparece en la pantalla de bienvenida y consentimiento del tutor.</small>
-              <label for="brand-input-logo" class="brand-subheading" style="margin-top: 0.65rem; display: block;">URL del Logo de la Clínica (HTTPS):</label>
-              <input type="url" id="brand-input-logo" class="clinical-input" placeholder="https://vet.142.132.233.38.sslip.io/favicon.svg" />
-              <small class="brand-field-hint">Se inyecta en la cabecera de la Receta Médica Oficial PDF y en la vista del tutor.</small>
+              <label for="brand-input-logo" class="brand-subheading" style="margin-top: 0.65rem; display: block;">URL
+                del Logo de la Clínica (HTTPS):</label>
+              <input type="url" id="brand-input-logo" class="clinical-input"
+                placeholder="https://vet.142.132.233.38.sslip.io/favicon.svg" />
+              <small class="brand-field-hint">Se inyecta en la cabecera de la Receta Médica Oficial PDF y en la vista
+                del tutor.</small>
             </div>
           </div>
 
@@ -1363,7 +1444,8 @@
               <span class="action-icon" id="copy-icon-client">📋</span>
               <div class="action-text-col">
                 <strong>Copiar Link Vista Cliente</strong>
-                <small class="link-url-preview" id="preview-url-client">https://vet.142.132.233.38.sslip.io/?vet=slug&view=client</small>
+                <small class="link-url-preview"
+                  id="preview-url-client">https://vet.142.132.233.38.sslip.io/?vet=slug&view=client</small>
               </div>
             </button>
 
@@ -1371,7 +1453,8 @@
               <span class="action-icon" id="copy-icon-vet">📋</span>
               <div class="action-text-col">
                 <strong>Copiar Link Panel Veterinario</strong>
-                <small class="link-url-preview" id="preview-url-vet">https://vet.142.132.233.38.sslip.io/?vet=slug&view=vet</small>
+                <small class="link-url-preview"
+                  id="preview-url-vet">https://vet.142.132.233.38.sslip.io/?vet=slug&view=vet</small>
               </div>
             </button>
 
@@ -1432,30 +1515,45 @@
         <div class="modal-privacy-header">
           <div class="privacy-icon-pill">⚖️ LEY 21.719 CHILE</div>
           <h3>Política de Privacidad, Tratamiento de Datos y Uso de IA</h3>
-          <button type="button" class="btn-close-modal" id="btn-close-privacy-modal" title="Cerrar modal">&times;</button>
+          <button type="button" class="btn-close-modal" id="btn-close-privacy-modal"
+            title="Cerrar modal">&times;</button>
         </div>
         <div class="modal-privacy-body">
           <div class="privacy-item" id="privacy-item-controller">
             <strong>(a) Identificación del Responsable y Encargado del Tratamiento (Art. 14):</strong>
-            <p id="privacy-controller-text">El profesional o clínica veterinaria tratante actúa como <strong>Responsable del Tratamiento</strong> (Data Controller). CoVet Chile opera exclusivamente como <strong>Encargado del Tratamiento</strong> (Data Processor) bajo estrictas medidas de seguridad técnica y organizativa mediante un Acuerdo de Tratamiento de Datos (DPA).</p>
+            <p id="privacy-controller-text">El profesional o clínica veterinaria tratante actúa como <strong>Responsable
+                del Tratamiento</strong> (Data Controller). CoVet Chile opera exclusivamente como <strong>Encargado del
+                Tratamiento</strong> (Data Processor) bajo estrictas medidas de seguridad técnica y organizativa
+              mediante un Acuerdo de Tratamiento de Datos (DPA).</p>
           </div>
           <div class="privacy-item">
             <strong>(b) Finalidades Diferenciadas y Base de Licitud (Art. 12 y 13):</strong>
-            <p>1. <em>Gestión Clínica (Obligatoria):</em> Reserva, coordinación de visitas y elaboración de ficha clínica (Base: ejecución de contrato de servicios veterinarios).<br>
-            2. <em>Comunicaciones WhatsApp (Opcional):</em> Despacho de recetas electrónicas y avisos de posología.<br>
-            3. <em>Triaje con IA (Opcional):</em> Clasificación preliminar de urgencias mediante modelos de lenguaje.</p>
+            <p>1. <em>Gestión Clínica (Obligatoria):</em> Reserva, coordinación de visitas y elaboración de ficha
+              clínica (Base: ejecución de contrato de servicios veterinarios).<br>
+              2. <em>Comunicaciones WhatsApp (Opcional):</em> Despacho de recetas electrónicas y avisos de
+              posología.<br>
+              3. <em>Triaje con IA (Opcional):</em> Clasificación preliminar de urgencias mediante modelos de lenguaje.
+            </p>
           </div>
           <div class="privacy-item">
             <strong>(c) Transferencia Internacional de Datos a EE.UU. (Art. 26 Ley 21.719):</strong>
-            <p>Para la transcripción fonética y estructuración del SOAP clínico, se utilizan servicios de alta seguridad provistos por <strong>Groq Inc.</strong> y <strong>Anthropic PBC</strong> ubicados en Estados Unidos de América. Los datos viajan cifrados bajo protocolo TLS 1.3 con acuerdos de confidencialidad que prohíben taxativamente el entrenamiento de modelos fundacionales con datos de pacientes o tutores.</p>
+            <p>Para la transcripción fonética y estructuración del SOAP clínico, se utilizan servicios de alta seguridad
+              provistos por <strong>Groq Inc.</strong> y <strong>Anthropic PBC</strong> ubicados en Estados Unidos de
+              América. Los datos viajan cifrados bajo protocolo TLS 1.3 con acuerdos de confidencialidad que prohíben
+              taxativamente el entrenamiento de modelos fundacionales con datos de pacientes o tutores.</p>
           </div>
           <div class="privacy-item">
             <strong>(d) Minimización y Memoria Volátil de Audios:</strong>
-            <p>Las grabaciones de voz se procesan íntegramente en la memoria volátil (RAM) del servidor durante la consulta y no se conservan en almacenamiento físico persistente una vez obtenida la transcripción (Zero Persistent Audio Retention).</p>
+            <p>Las grabaciones de voz se procesan íntegramente en la memoria volátil (RAM) del servidor durante la
+              consulta y no se conservan en almacenamiento físico persistente una vez obtenida la transcripción (Zero
+              Persistent Audio Retention).</p>
           </div>
           <div class="privacy-item">
             <strong>(e) Ejercicio de Derechos ARSOP+ y Ticket HMAC Legal:</strong>
-            <p>Conforme a la Ley N° 21.719, tienes derecho a Acceso, Rectificación, Supresión, Oposición y Portabilidad. Si solicitas la supresión de tus datos, se genera un código de comprobante inmutable (<code>BAJA-XXXXXXXX</code>) con sellado HMAC-SHA256 en una tabla aislada de auditoría, anonimizando de forma disociada tu nombre y teléfono para proteger la historia epidemiológica de la mascota.</p>
+            <p>Conforme a la Ley N° 21.719, tienes derecho a Acceso, Rectificación, Supresión, Oposición y Portabilidad.
+              Si solicitas la supresión de tus datos, se genera un código de comprobante inmutable
+              (<code>BAJA-XXXXXXXX</code>) con sellado HMAC-SHA256 en una tabla aislada de auditoría, anonimizando de
+              forma disociada tu nombre y teléfono para proteger la historia epidemiológica de la mascota.</p>
           </div>
         </div>
         <div class="modal-privacy-footer">
@@ -1473,33 +1571,21 @@
           <div class="daniela-login-lock-badge">🔒 ACCESO INTERNO CERRADO</div>
           <span class="pin-shield-icon">🩺</span>
           <h3 id="vet-portal-login-title">Portal Clínico - Acceso Exclusivo Dra. Daniela Alcázar</h3>
-          <p>Autenticación médica restringida. Ingresa tus credenciales clínicas para acceder al dictado SOAP con IA, agenda e historial.</p>
+          <p>Autenticación médica restringida. Ingresa tus credenciales clínicas para acceder al dictado SOAP con IA,
+            agenda e historial.</p>
         </div>
 
         <form id="form-vet-exclusive-login" class="daniela-login-form" onsubmit="return false;">
           <div class="daniela-login-field">
             <label for="input-vet-login-email">Email Profesional *</label>
-            <input
-              type="email"
-              id="input-vet-login-email"
-              class="clinical-input"
-              placeholder="daniela@alcazarvet.cl"
-              value="daniela@alcazarvet.cl"
-              required
-              autocomplete="username"
-            >
+            <input type="email" id="input-vet-login-email" class="clinical-input" placeholder="daniela@alcazarvet.cl"
+              value="daniela@alcazarvet.cl" required autocomplete="username">
           </div>
 
           <div class="daniela-login-field">
             <label for="input-vet-login-password">Contraseña *</label>
-            <input
-              type="password"
-              id="input-vet-login-password"
-              class="clinical-input font-mono"
-              placeholder="••••••••••••"
-              required
-              autocomplete="current-password"
-            >
+            <input type="password" id="input-vet-login-password" class="clinical-input font-mono"
+              placeholder="••••••••••••" required autocomplete="current-password">
             <!-- Compatibilidad oculta con flujo PIN interno -->
             <input type="hidden" id="input-vet-pin" value="2026">
           </div>
@@ -1521,7 +1607,8 @@
           </div>
 
           <div class="daniela-login-closed-note">
-            <span>🛡️ Entrada cerrada de uso interno exclusivo · Sin registro público · Protegido bajo Ley N° 21.719</span>
+            <span>🛡️ Entrada cerrada de uso interno exclusivo · Sin registro público · Protegido bajo Ley N°
+              21.719</span>
           </div>
         </form>
       </div>
@@ -1533,11 +1620,13 @@
     <div class="modal-backdrop hidden" id="modal-subscribe-membership">
       <div class="glass-panel modal-privacy-card daniela-subscribe-modal-card">
         <div class="modal-privacy-header">
-          <div class="privacy-icon-pill" style="background: rgba(233, 30, 99, 0.12); color: #e91e63; border-color: rgba(233, 30, 99, 0.3);">
+          <div class="privacy-icon-pill"
+            style="background: rgba(233, 30, 99, 0.12); color: #e91e63; border-color: rgba(233, 30, 99, 0.3);">
             💖 MEMBRESÍA CUIDADO CONTINUO · $8.990/MES
           </div>
           <h3>Suscribir a mi mascota con la Dra. Daniela Alcázar</h3>
-          <button type="button" class="btn-close-modal" id="btn-close-subscribe-modal" title="Cerrar modal">&times;</button>
+          <button type="button" class="btn-close-modal" id="btn-close-subscribe-modal"
+            title="Cerrar modal">&times;</button>
         </div>
 
         <div class="modal-privacy-body">
@@ -1545,11 +1634,13 @@
             <div class="form-grid-2">
               <div class="clinical-field">
                 <label for="sub-tutor-nombre">Tu Nombre y Apellido *</label>
-                <input type="text" id="sub-tutor-nombre" class="clinical-input" required placeholder="Ej: Camila Valdés">
+                <input type="text" id="sub-tutor-nombre" class="clinical-input" required
+                  placeholder="Ej: Camila Valdés">
               </div>
               <div class="clinical-field">
                 <label for="sub-tutor-telefono">Tu WhatsApp (+569...) *</label>
-                <input type="tel" id="sub-tutor-telefono" class="clinical-input font-mono" required placeholder="+56987654321">
+                <input type="tel" id="sub-tutor-telefono" class="clinical-input font-mono" required
+                  placeholder="+56987654321">
               </div>
             </div>
 
@@ -1560,7 +1651,8 @@
               </div>
               <div class="clinical-field">
                 <label for="sub-tutor-direccion">Dirección para Visita a Domicilio *</label>
-                <input type="text" id="sub-tutor-direccion" class="clinical-input" required placeholder="Comuna, calle y número">
+                <input type="text" id="sub-tutor-direccion" class="clinical-input" required
+                  placeholder="Comuna, calle y número">
               </div>
             </div>
 
@@ -1574,6 +1666,9 @@
                 <select id="sub-paciente-especie" class="clinical-input">
                   <option value="Canino">Perro (Canino) 🐶</option>
                   <option value="Felino">Gato (Felino) 🐱</option>
+                  <option value="Conejo">Conejo 🐰</option>
+                  <option value="Cuy">Cuy 🐹</option>
+                  <option value="Erizo">Erizo 🦔</option>
                 </select>
               </div>
               <div class="clinical-field">
@@ -1584,14 +1679,17 @@
 
             <div class="daniela-subscribe-summary-box">
               <div><strong>Plan seleccionado:</strong> Membresía Cuidado Continuo — Dra. Daniela Alcázar</div>
-              <div><strong>Valor mensual:</strong> <span style="color: #e91e63; font-weight: 800;">$8.990 CLP / mes</span></div>
-              <small>✓ Incluye Vacuna Óctuple/Triple + Antirrábica anual, 1 Consulta a Domicilio Gratis/año, 20% dcto. en consultas extra, Historial 24/7 y Recordatorios Automáticos.</small>
+              <div><strong>Valor mensual:</strong> <span style="color: #e91e63; font-weight: 800;">$8.990 CLP /
+                  mes</span></div>
+              <small>✓ Incluye Vacuna Óctuple/Triple + Antirrábica anual, 1 Consulta a Domicilio Gratis/año, 20% dcto.
+                en consultas extra, Historial 24/7 y Recordatorios Automáticos.</small>
             </div>
 
             <label class="privacy-checkbox-label" for="sub-consent-ley21719" style="margin-top: 0.75rem;">
               <input type="checkbox" id="sub-consent-ley21719" checked required class="privacy-checkbox">
               <span class="privacy-consent-text">
-                Acepto los términos de la Membresía Cuidado Continuo y el tratamiento de datos clínicos conforme a la <strong>Ley N° 21.719</strong> para recordatorios de vacunación y atención a domicilio.
+                Acepto los términos de la Membresía Cuidado Continuo y el tratamiento de datos clínicos conforme a la
+                <strong>Ley N° 21.719</strong> para recordatorios de vacunación y atención a domicilio.
               </span>
             </label>
 
@@ -1619,30 +1717,40 @@
         </div>
         <div class="modal-privacy-body">
           <p style="font-size: 0.9rem; color: var(--text-dim); margin-bottom: 1.25rem;">
-            Conforme al Artículo 21 de la Ley N° 21.719, el veterinario es el <strong>Responsable del Tratamiento</strong> y CoVet SpA el <strong>Encargado</strong>. Suscribe este contrato para blindar tu práctica ante multas de la APDP.
+            Conforme al Artículo 21 de la Ley N° 21.719, el veterinario es el <strong>Responsable del
+              Tratamiento</strong> y CoVet SpA el <strong>Encargado</strong>. Suscribe este contrato para blindar tu
+            práctica ante multas de la APDP.
           </p>
           <form id="form-sign-dpa" class="dpa-sign-form">
             <div class="input-group" style="margin-bottom: 0.85rem;">
-              <label for="dpa-vet-nombre" style="font-size: 0.85rem; font-weight: 700;">Nombre Completo Profesional *</label>
-              <input type="text" id="dpa-vet-nombre" required placeholder="Ej: Dra. Carolina Rojas Morales" class="glass-input">
+              <label for="dpa-vet-nombre" style="font-size: 0.85rem; font-weight: 700;">Nombre Completo Profesional
+                *</label>
+              <input type="text" id="dpa-vet-nombre" required placeholder="Ej: Dra. Carolina Rojas Morales"
+                class="glass-input">
             </div>
             <div class="input-group" style="margin-bottom: 0.85rem;">
               <label for="dpa-vet-rut" style="font-size: 0.85rem; font-weight: 700;">RUT Profesional *</label>
               <input type="text" id="dpa-vet-rut" required placeholder="Ej: 16.789.123-4" class="glass-input font-mono">
             </div>
             <div class="input-group" style="margin-bottom: 0.85rem;">
-              <label for="dpa-vet-reg" style="font-size: 0.85rem; font-weight: 700;">Registro Colegio Médico Veterinario / SAG *</label>
-              <input type="text" id="dpa-vet-reg" required placeholder="Ej: Colmevet N° 4521 · SAG 8912" class="glass-input">
+              <label for="dpa-vet-reg" style="font-size: 0.85rem; font-weight: 700;">Registro Colegio Médico Veterinario
+                / SAG *</label>
+              <input type="text" id="dpa-vet-reg" required placeholder="Ej: Colmevet N° 4521 · SAG 8912"
+                class="glass-input">
             </div>
             <div class="input-group" style="margin-bottom: 1.25rem;">
-              <label for="dpa-vet-email" style="font-size: 0.85rem; font-weight: 700;">Email de Contacto Privacidad</label>
+              <label for="dpa-vet-email" style="font-size: 0.85rem; font-weight: 700;">Email de Contacto
+                Privacidad</label>
               <input type="email" id="dpa-vet-email" placeholder="contacto@dracarolina.cl" class="glass-input">
             </div>
 
-            <div style="margin-bottom: 1.25rem; padding: 0.75rem 1rem; background: rgba(13, 148, 136, 0.08); border: 1px solid var(--teal-primary, #0D9488); border-radius: 8px;">
+            <div
+              style="margin-bottom: 1.25rem; padding: 0.75rem 1rem; background: rgba(13, 148, 136, 0.08); border: 1px solid var(--teal-primary, #0D9488); border-radius: 8px;">
               <label style="display: flex; gap: 0.6rem; cursor: pointer; font-size: 0.85rem; align-items: flex-start;">
-                <input type="checkbox" id="dpa-check-terms" checked required style="margin-top: 3px; accent-color: var(--teal-primary, #0D9488);">
-                <span>Acepto y suscribo el Contrato de Encargo de Tratamiento de Datos Personales (DPA v1.0) conforme al Art. 21 Ley 21.719 con firma electrónica HMAC-SHA256.</span>
+                <input type="checkbox" id="dpa-check-terms" checked required
+                  style="margin-top: 3px; accent-color: var(--teal-primary, #0D9488);">
+                <span>Acepto y suscribo el Contrato de Encargo de Tratamiento de Datos Personales (DPA v1.0) conforme al
+                  Art. 21 Ley 21.719 con firma electrónica HMAC-SHA256.</span>
               </label>
             </div>
 
@@ -1650,7 +1758,8 @@
               <button type="submit" class="btn-action-primary" id="btn-submit-dpa" style="flex: 1;">
                 🛡️ Firmar y Sellar Contrato DPA
               </button>
-              <a href="#" target="_blank" class="btn-action-outline hidden" id="btn-download-dpa-cert" style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.75rem 1.25rem;">
+              <a href="#" target="_blank" class="btn-action-outline hidden" id="btn-download-dpa-cert"
+                style="text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; padding: 0.75rem 1.25rem;">
                 📄 Descargar Certificado
               </a>
             </div>
@@ -1721,20 +1830,23 @@
         <div class="modal-privacy-header">
           <div class="privacy-icon-pill">🧠 EPICRISIS LONGITUDINAL IA</div>
           <h3 id="history-summary-title">Resumen de Historial Médico Extenso</h3>
-          <button type="button" class="btn-close-modal" id="btn-close-history-summary" title="Cerrar modal">&times;</button>
+          <button type="button" class="btn-close-modal" id="btn-close-history-summary"
+            title="Cerrar modal">&times;</button>
         </div>
         <div class="modal-privacy-body" id="history-summary-body">
           <div class="privacy-item">
             <strong>🩺 Epicrisis Clínica Consolidada (Para el Veterinario):</strong>
             <p id="history-summary-vet-text">Generando síntesis longitudinal...</p>
           </div>
-          <div class="privacy-item" style="background: rgba(13, 148, 136, 0.08); border-left: 3px solid var(--teal-primary, #0D9488); padding: 0.85rem; border-radius: 8px;">
+          <div class="privacy-item"
+            style="background: rgba(13, 148, 136, 0.08); border-left: 3px solid var(--teal-primary, #0D9488); padding: 0.85rem; border-radius: 8px;">
             <strong>💬 Resumen Amigable del Historial (En Lenguaje Sencillo para el Tutor):</strong>
             <p id="history-summary-tutor-text">--</p>
           </div>
           <div class="privacy-item">
             <strong>📅 Cronología de Atenciones Registradas (<span id="history-summary-count">0</span>):</strong>
-            <div id="history-summary-timeline" style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;"></div>
+            <div id="history-summary-timeline"
+              style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.5rem;"></div>
           </div>
         </div>
         <div class="modal-privacy-footer" style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
@@ -1770,4 +1882,5 @@
 
   <script type="module" src="/main.js"></script>
 </body>
+
 </html>

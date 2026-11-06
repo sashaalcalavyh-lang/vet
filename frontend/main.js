@@ -671,7 +671,16 @@ function renderTriageStage(data) {
   }
 
   const species = data.species_detected || 'Canino';
-  const speciesEmoji = species.toLowerCase().includes('felin') || species.toLowerCase().includes('gat') ? '🐱' : '🐶';
+  const spLower = species.toLowerCase();
+  const speciesEmoji = spLower.includes('felin') || spLower.includes('gat')
+    ? '🐱'
+    : spLower.includes('conej')
+    ? '🐰'
+    : spLower.includes('cuy') || spLower.includes('cobay')
+    ? '🐹'
+    : spLower.includes('eriz')
+    ? '🦔'
+    : '🐶';
   triageSpeciesTag.textContent = `${speciesEmoji} ${species}`;
   triageMotivoTitle.textContent = data.motivo_resumido || 'Consulta Clínica';
   triageRecommendationText.textContent = data.first_aid_preview || 'Nuestro Agente Clínico ha estructurado el protocolo de atención para tu mascota.';
@@ -746,19 +755,38 @@ function renderHybridScheduleSelector(data) {
     });
 
   } else {
-    // Caso MEDIUM o LOW: 3 Horas Exactas + Botón Desplegable de Franjas Domicilio
+    // Caso MEDIUM o LOW: Selector de Modalidad (Domicilio vs Telemedicina) + 3 Horas Exactas + Ventanas Domicilio
     const slots = (data.suggested_slots && data.suggested_slots.length > 0)
       ? data.suggested_slots
       : ['11:00', '15:30', '18:00'];
 
-    selectedModalidad = 'DOMICILIO';
+    const rawIntent = (clientIntentInput && clientIntentInput.value ? clientIntentInput.value : '').toLowerCase();
+    const wantsTelemed = rawIntent.includes('telemedicina') || rawIntent.includes('online') || rawIntent.includes('video');
+
+    selectedModalidad = wantsTelemed ? 'TELEMEDICINA' : 'DOMICILIO';
     selectedHorario = slots[0];
-    selectedPrecio = pricing.domicilio_programado || 25000;
+    selectedPrecio = wantsTelemed ? (pricing.telemedicina || 15000) : (pricing.domicilio_programado || 25000);
 
     hybridScheduleContainer.innerHTML = `
       <div class="standard-schedule-wrap">
+        <div class="urgent-schedule-grid" style="margin-bottom: 0.9rem;">
+          <div class="urgent-option-card modality-choice-card ${!wantsTelemed ? 'selected' : ''}" data-mod="DOMICILIO" data-price="${pricing.domicilio_programado || 25000}">
+            <span class="card-top-badge">🏠 ATENCIÓN EN CASA</span>
+            <h4 class="urgent-card-title">Visita Veterinaria a Domicilio</h4>
+            <p class="urgent-card-desc">La Dra. Daniela Alcázar acude a tu hogar sin estrés de traslado para tu mascota.</p>
+            <div class="urgent-card-price">$${Number(pricing.domicilio_programado || 25000).toLocaleString('es-CL')} CLP</div>
+          </div>
+
+          <div class="urgent-option-card modality-choice-card ${wantsTelemed ? 'selected' : ''}" data-mod="TELEMEDICINA" data-price="${pricing.telemedicina || 15000}">
+            <span class="card-top-badge">💻 VIDEOCONSULTA ONLINE</span>
+            <h4 class="urgent-card-title">Consulta por Telemedicina</h4>
+            <p class="urgent-card-desc">Evaluación clínica por videollamada, orientación, control y emisión de Receta Digital PDF.</p>
+            <div class="urgent-card-price">$${Number(pricing.telemedicina || 15000).toLocaleString('es-CL')} CLP</div>
+          </div>
+        </div>
+
         <div class="exact-slots-row">
-          <span class="exact-slots-label">Cupos de hora exacta sugeridos para hoy:</span>
+          <span class="exact-slots-label">Cupos de hora exacta disponibles para hoy:</span>
           ${slots.map((slot, i) => `
             <button type="button" class="btn-exact-slot ${i === 0 ? 'selected' : ''}" data-slot="${slot}">
               🕒 ${slot} hrs
@@ -766,38 +794,47 @@ function renderHybridScheduleSelector(data) {
           `).join('')}
         </div>
 
-        <div class="home-window-toggle-box">
+        <div class="home-window-toggle-box" id="home-window-toggle-wrapper">
           <button type="button" class="btn-toggle-home-window" id="btn-toggle-home-window">
-            <span>🚗 ¿Atención a domicilio? Prefiero coordinar ventana de horario</span>
+            <span>🚗 ¿Visita a domicilio? Prefiero elegir ventana de horario flexible</span>
             <span id="window-toggle-arrow">▼</span>
           </button>
           <div class="home-windows-subgrid hidden" id="home-windows-subgrid">
             <button type="button" class="btn-window-slot" data-slot="VENTANA_MANANA_10_13" data-label="Mañana (10:00 - 13:00 hrs)">
               <span class="window-name">🌅 Ventana Mañana (10:00 – 13:00)</span>
-              <span class="window-price">$${Number(pricing.domicilio_programado).toLocaleString('es-CL')} CLP</span>
+              <span class="window-price">$${Number(pricing.domicilio_programado || 25000).toLocaleString('es-CL')} CLP</span>
             </button>
             <button type="button" class="btn-window-slot" data-slot="VENTANA_TARDE_15_19" data-label="Tarde (15:00 - 19:00 hrs)">
               <span class="window-name">🌇 Ventana Tarde (15:00 – 19:00)</span>
-              <span class="window-price">$${Number(pricing.domicilio_programado).toLocaleString('es-CL')} CLP</span>
+              <span class="window-price">$${Number(pricing.domicilio_programado || 25000).toLocaleString('es-CL')} CLP</span>
             </button>
           </div>
         </div>
       </div>
     `;
 
-    // Listeners para slots exactos
+    // Listeners para selector de modalidad (Domicilio vs Telemedicina)
+    const modCards = hybridScheduleContainer.querySelectorAll('.modality-choice-card');
     const exactSlotBtns = hybridScheduleContainer.querySelectorAll('.btn-exact-slot');
     const windowSlotBtns = hybridScheduleContainer.querySelectorAll('.btn-window-slot');
     const btnToggle = hybridScheduleContainer.querySelector('#btn-toggle-home-window');
     const subgrid = hybridScheduleContainer.querySelector('#home-windows-subgrid');
     const arrow = hybridScheduleContainer.querySelector('#window-toggle-arrow');
 
+    modCards.forEach(card => {
+      card.addEventListener('click', () => {
+        modCards.forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedModalidad = card.getAttribute('data-mod');
+        selectedPrecio = parseInt(card.getAttribute('data-price'), 10);
+      });
+    });
+
     exactSlotBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         exactSlotBtns.forEach(b => b.classList.remove('selected'));
         windowSlotBtns.forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
-        selectedModalidad = 'DOMICILIO';
         selectedHorario = btn.getAttribute('data-slot');
       });
     });
@@ -820,6 +857,10 @@ function renderHybridScheduleSelector(data) {
         windowSlotBtns.forEach(b => b.classList.remove('selected'));
         btn.classList.add('selected');
         selectedModalidad = 'DOMICILIO';
+        selectedPrecio = pricing.domicilio_programado || 25000;
+        modCards.forEach(c => {
+          c.classList.toggle('selected', c.getAttribute('data-mod') === 'DOMICILIO');
+        });
         selectedHorario = btn.getAttribute('data-label');
       });
     });
@@ -3262,7 +3303,7 @@ if (formSubscribeMembership) {
                 <span>📲</span> Enviar Comprobante por WhatsApp a Dra. Daniela
               </a>
               <button type="button" class="btn-login-back-client" id="btn-done-subscribe">
-                Ver Historial Clínico 24/7 en la Página
+                Cerrar y Volver a la Página
               </button>
             </div>
           </div>
@@ -3271,14 +3312,10 @@ if (formSubscribeMembership) {
         if (btnDone) {
           btnDone.addEventListener('click', () => {
             modalSubscribeMembership.classList.add('hidden');
-            if (inputCarnetLookup) inputCarnetLookup.value = data.paciente.nombre;
-            lookupLiveCarnet(data.paciente.nombre);
           });
         }
       }
 
-      // Actualizar carné en vivo automáticamente
-      lookupLiveCarnet(data.paciente.nombre);
       loadVetMembershipsList();
     } catch (err) {
       showToast(`Error al suscribir: ${err.message}`, 'error');

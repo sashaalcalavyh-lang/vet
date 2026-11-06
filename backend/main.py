@@ -528,7 +528,7 @@ def seed_dra_daniela_alcazar() -> None:
             if not marca:
                 marca = ClinicaMarcaDB(
                     slug=slug_val,
-                    nombre_fantasia="Dra. Daniela Alcázar - Atención Veterinaria a Domicilio",
+                    nombre_fantasia="Dra. Daniela Alcázar - Atención Veterinaria a Domicilio y Telemedicina",
                     razon_social="Dra. Daniela Alcázar Servicios Veterinarios EIRL",
                     rut_responsable="77.845.312-9",
                     email_privacidad="daniela@alcazarvet.cl",
@@ -536,7 +536,7 @@ def seed_dra_daniela_alcazar() -> None:
                     color_secundario="#C2185B",
                     logo_url="https://vet.142.132.233.38.sslip.io/favicon.svg",
                     whatsapp_contacto="+56994128890",
-                    mensaje_bienvenida="Medicina veterinaria preventiva y de urgencia en la tranquilidad de tu hogar. Membresía Cuidado Continuo y seguimiento clínico 24/7.",
+                    mensaje_bienvenida="Medicina veterinaria preventiva, telemedicina y urgencia en la tranquilidad de tu hogar. Caninos, Felinos, Conejos, Cuy y Erizos.",
                     plan="PRO_WHITE_LABEL",
                     activo=True,
                     dpa_aceptado=True,
@@ -549,7 +549,8 @@ def seed_dra_daniela_alcazar() -> None:
             else:
                 marca.color_primario = "#E91E63"
                 marca.color_secundario = "#C2185B"
-                marca.nombre_fantasia = "Dra. Daniela Alcázar - Atención Veterinaria a Domicilio"
+                marca.nombre_fantasia = "Dra. Daniela Alcázar - Atención Veterinaria a Domicilio y Telemedicina"
+                marca.mensaje_bienvenida = "Medicina veterinaria preventiva, telemedicina y urgencia en la tranquilidad de tu hogar. Caninos, Felinos, Conejos, Cuy y Erizos."
                 marca.activo = True
                 marca.dpa_aceptado = True
 
@@ -2349,7 +2350,7 @@ async def client_intent(
             "   - 'HIGH': Riesgo vital inminente, disnea, sangrado activo, traumatismo severo, convulsión, vómito persistente, dolor agudo intolerable.\n"
             "   - 'MEDIUM': Vómito aislado, diarrea sin sangre, cojera leve/moderada, molestia ocular, decaimiento leve.\n"
             "   - 'LOW': Controles rutinarios, vacunas, preventivo general.\n"
-            "3. `especie_detectada`: 'Felino', 'Canino' o 'Exótico' (asumir Canino o Felino según mencione perro/gato o contexto).\n"
+            "3. `especie_detectada`: 'Felino', 'Canino', 'Conejo', 'Cuy' o 'Erizo' según mencione el tutor (asumir Canino si no se especifica).\n"
             "4. `motivo_resumido`: Frase clínica concisa (ej. 'Vómito agudo felino', 'Vacunación y control anual canino').\n"
             "5. `dynamic_questions`: EXACTAMENTE 3 preguntas clínicas breves, empáticas y directas adaptadas al caso para recabar datos antes de la atención (ej: '¿Hace cuántas horas comenzó el vómito?', '¿Has notado sangre, decaimiento extremo o intento de vomitar sin éxito?', '¿Comió algún objeto, planta o alimento nuevo?').\n"
             "6. `first_aid_protocol_id`: DEBE ser estrictamente una de estas 4 claves pre-aprobadas:\n"
@@ -2442,7 +2443,16 @@ async def client_intent(
                 "¿Prefieres atención veterinaria en tu domicilio o consulta por telemedicina?"
             ]
 
-        especie = "Felino" if any(w in texto_l for w in ["gato", "gata", "gatito", "felin", "michi"]) else "Canino"
+        if any(w in texto_l for w in ["conej", "bunny", "gazap"]):
+            especie = "Conejo"
+        elif any(w in texto_l for w in ["cuy", "cuyo", "cobay", "cuye"]):
+            especie = "Cuy"
+        elif any(w in texto_l for w in ["eriz"]):
+            especie = "Erizo"
+        elif any(w in texto_l for w in ["gato", "gata", "gatito", "felin", "michi"]):
+            especie = "Felino"
+        else:
+            especie = "Canino"
         ia_output = {
             "ui_mode": ui_mode,
             "urgency_level": urgency,
