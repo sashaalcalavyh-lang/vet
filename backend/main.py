@@ -18,9 +18,9 @@ import gzip
 import subprocess
 import asyncio
 from typing import List, Optional, Any, Dict, Union, Tuple
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header, Request
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header, Request, Query
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse
+from fastapi.responses import JSONResponse, HTMLResponse, StreamingResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 import httpx
@@ -339,7 +339,7 @@ class WhatsAppSessionDB(Base):
     telefono = Column(String(30), unique=True, nullable=False, index=True)
     profile_name = Column(String(120), nullable=True)
     current_step = Column(String(50), default="MAIN_MENU")
-    context_json = Column(JSON, default=dict)
+    context_json = Column(JSONB, default=dict)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
