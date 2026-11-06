@@ -54,9 +54,9 @@
       <!-- Sello de Confianza Clínica Dra. Daniela Alcázar / CoVet -->
       <div class="client-trust-badge-row">
         <div class="client-trust-badge">
-          <div class="trust-icon-box daniela-accent-icon">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07" />
+          <div class="trust-icon-box daniela-accent-icon" aria-hidden="true">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M11 2a2 2 0 0 0-2 2v5H4a2 2 0 0 0-2 2v2c0 1.1.9 2 2 2h5v5c0 1.1.9 2 2 2h2a2 2 0 0 0 2-2v-5h5a2 2 0 0 0 2-2v-2a2 2 0 0 0-2-2h-5V4a2 2 0 0 0-2-2h-2z" />
             </svg>
           </div>
           <div class="trust-texts">
@@ -73,9 +73,9 @@
 
       <!-- HERO SECTION DE CONFIANZA — DRA. DANIELA ALCÁZAR -->
       <div class="daniela-hero-banner glass-panel" id="daniela-hero-section">
-        <div class="daniela-hero- pills-row">
-          <span class="daniela-pill-magenta">🩺 Medicina Veterinaria Preventiva, Domicilio & Telemedicina</span>
-          <span class="daniela-pill-purple">✨ Sin Estrés de Traslado</span>
+        <div class="daniela-hero-pills-row">
+          <span class="daniela-pill-magenta"><span class="pill-dot-indicator"></span>Medicina Veterinaria Preventiva, Domicilio & Telemedicina</span>
+          <span class="daniela-pill-purple">Sin Estrés de Traslado</span>
           <span class="daniela-pill-orange">🐾 Caninos, Felinos, Conejos, Cuy y Erizos</span>
         </div>
 
@@ -89,24 +89,34 @@
 
         <div class="daniela-hero-cta-row">
           <a href="#daniela-pricing-section" class="btn-daniela-primary-cta">
-            <span>💖</span> Ver Membresía Cuidado Continuo ($8.990/mes)
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="m9 12 2 2 4-4"/>
+            </svg>
+            <span>Ver Membresía Cuidado Continuo ($8.990/mes)</span>
           </a>
           <a href="#client-intent-hero" class="btn-daniela-secondary-cta">
-            <span>💻</span> Agendar Visita a Domicilio o Telemedicina
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span>Agendar Visita a Domicilio o Telemedicina</span>
           </a>
         </div>
 
         <div class="daniela-trust-metrics">
           <div class="daniela-metric-item">
-            <span class="metric-dot-magenta">✓</span>
+            <span class="metric-dot-magenta" aria-hidden="true">✓</span>
             <span>Registro Colmevet & SAG Vigente</span>
           </div>
           <div class="daniela-metric-item">
-            <span class="metric-dot-orange">✓</span>
+            <span class="metric-dot-orange" aria-hidden="true">✓</span>
             <span>Receta Digital PDF y Carné 24/7</span>
           </div>
           <div class="daniela-metric-item">
-            <span class="metric-dot-purple">✓</span>
+            <span class="metric-dot-purple" aria-hidden="true">✓</span>
             <span>Recordatorios Automáticos WhatsApp</span>
           </div>
         </div>
@@ -115,19 +125,26 @@
       <!-- SECCIÓN DE SUSCRIPCIÓN: TARJETA DE PRECIO DESTACADA (PRICING CARD) -->
       <div class="daniela-pricing-section" id="daniela-pricing-section">
         <div class="daniela-pricing-card glass-panel">
-          <div class="pricing-card-ribbon">
-            <span>🌟 PLAN PREVENTIVO ANUAL DESTACADO</span>
+          <div class="pricing-card-top-row">
+            <div class="pricing-card-ribbon">
+              <span class="ribbon-dot"></span>
+              <span>PLAN PREVENTIVO ANUAL DESTACADO</span>
+            </div>
+            <span class="pricing-plan-tag">Cuidado Preventivo Integral en Casa</span>
           </div>
 
           <div class="pricing-card-header">
-            <div class="pricing-plan-tag">Cuidado Preventivo Integral en Casa</div>
-            <h2 class="pricing-plan-title">Membresía Cuidado Continuo</h2>
-            <p class="pricing-plan-desc">Todo lo que tu mascota necesita para mantenerse sana, protegida y con su
-              calendario clínico al día durante todo el año.</p>
+            <div class="pricing-header-copy">
+              <h2 class="pricing-plan-title">Membresía Cuidado Continuo</h2>
+              <p class="pricing-plan-desc">Todo lo que tu mascota necesita para mantenerse sana, protegida y con su
+                calendario clínico al día durante todo el año.</p>
+            </div>
 
             <div class="pricing-amount-box">
-              <span class="pricing-currency">$</span>
-              <span class="pricing-price-number">8.990</span>
+              <div class="pricing-amount-line">
+                <span class="pricing-currency">$</span>
+                <span class="pricing-price-number">8.990</span>
+              </div>
               <div class="pricing-period-col">
                 <span class="pricing-period-main">mensuales</span>
                 <span class="pricing-period-sub">por mascota · IVA incl.</span>
@@ -142,33 +159,43 @@
           <!-- Lista exacta de los 5 beneficios con iconos check -->
           <ul class="pricing-benefits-list">
             <li class="pricing-benefit-item">
-              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <span class="benefit-check-icon" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
               <div class="benefit-text">
                 <strong>Cobertura Anual:</strong> Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de
                 suscripción (o antes si llevan meses acumulados).
               </div>
             </li>
             <li class="pricing-benefit-item">
-              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <span class="benefit-check-icon" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
               <div class="benefit-text">
                 <strong>1 Consulta a Domicilio Gratis al Año:</strong> Para controles sanos o dudas generales.
               </div>
             </li>
             <li class="pricing-benefit-item">
-              <span class="benefit-check-icon accent-orange" aria-hidden="true">✓</span>
+              <span class="benefit-check-icon accent-orange" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
               <div class="benefit-text">
                 <strong>Descuento en Consultas Extra:</strong> 20% de descuento en consultas de urgencia o adicionales.
               </div>
             </li>
             <li class="pricing-benefit-item">
-              <span class="benefit-check-icon accent-purple" aria-hidden="true">✓</span>
+              <span class="benefit-check-icon accent-purple" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
               <div class="benefit-text">
                 <strong>Historial Clínico en Vivo:</strong> Acceso 24/7 a la app con las fechas de vacunación,
                 desparasitación y notas clínicas de su mascota.
               </div>
             </li>
             <li class="pricing-benefit-item">
-              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <span class="benefit-check-icon" aria-hidden="true">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
               <div class="benefit-text">
                 <strong>Recordatorios Automáticos:</strong> La app avisa cuándo toca la próxima vacuna o
                 desparasitación.
@@ -179,12 +206,11 @@
           <!-- Botón de Call to Action Atractivo -->
           <div class="pricing-cta-box">
             <button type="button" class="btn-subscribe-pet" id="btn-open-subscribe-modal">
-              <span class="cta-sparkle">🐾</span>
               <span>Suscribir a mi mascota</span>
-              <span class="cta-arrow">→</span>
+              <span class="cta-arrow" aria-hidden="true">→</span>
             </button>
             <p class="pricing-cta-subnote">
-              🔒 Activación inmediata desde tu celular · Acceso 24/7 al carnet digital y respaldo Ley 21.719
+              Activación inmediata desde tu celular · Acceso 24/7 al carnet digital y respaldo Ley 21.719
             </p>
           </div>
         </div>
@@ -194,7 +220,7 @@
       <div class="client-intent-hero" id="client-intent-hero">
         <div class="glass-panel client-canvas-card">
           <div class="client-canvas-header">
-            <span class="daniela-pill-magenta" style="margin-bottom: 0.5rem; display: inline-block;">🤖 Asistente
+            <span class="daniela-pill-magenta" style="margin-bottom: 0.65rem; display: inline-flex;"><span class="pill-dot-indicator"></span>Asistente
               Clínico de Triaje · Agenda a Domicilio & Telemedicina</span>
             <h2 class="client-main-title">¿Tu mascota presenta síntomas hoy o necesitas agendar una consulta ?</h2>
             <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el nivel de
