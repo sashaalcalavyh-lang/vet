@@ -40,34 +40,165 @@
     </header>
 
     <!-- ======================================================= -->
-    <!-- VISTA 1: MICRO-APP DE INTENCIÓN CLIENTE (#view-client)  -->
+    <!-- VISTA 1: LANDING PAGE CLIENTES & TRIAJE IA (#view-client)-->
     <!-- ======================================================= -->
     <section class="view-container active" id="view-client">
-      <!-- Sello de Confianza Clínica CoVet -->
+      <!-- Sello de Confianza Clínica Dra. Daniela Alcázar / CoVet -->
       <div class="client-trust-badge-row">
         <div class="client-trust-badge">
-          <div class="trust-icon-box">
+          <div class="trust-icon-box daniela-accent-icon">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/>
             </svg>
           </div>
           <div class="trust-texts">
-            <span class="trust-title">CoVet Clinical AI</span>
-            <span class="trust-sub">Red de Urgencias & Telemedicina Veterinaria Chile</span>
+            <span class="trust-title" id="client-header-brand-title">Dra. Daniela Alcázar</span>
+            <span class="trust-sub" id="client-header-brand-sub">Atención Veterinaria a Domicilio · Estándar Clínico & Ley 21.719</span>
           </div>
         </div>
         <div class="trust-status-pill">
           <span class="live-dot"></span>
-          <span>Médicos de Turno Activos</span>
+          <span>Atención a Domicilio Activa</span>
         </div>
       </div>
 
-      <!-- ESTADO 1: LIENZO MINIMALISTA DE INTENCIÓN -->
+      <!-- HERO SECTION DE CONFIANZA — DRA. DANIELA ALCÁZAR -->
+      <div class="daniela-hero-banner glass-panel" id="daniela-hero-section">
+        <div class="daniela-hero- pills-row">
+          <span class="daniela-pill-magenta">🩺 Medicina Veterinaria Preventiva & Domicilio</span>
+          <span class="daniela-pill-purple">✨ Sin Estrés de Traslado</span>
+          <span class="daniela-pill-orange">🐾 Perros y Gatos</span>
+        </div>
+
+        <h1 class="daniela-hero-title" id="daniela-main-heading">
+          Dra. Daniela Alcázar - Atención Veterinaria a Domicilio
+        </h1>
+        <p class="daniela-hero-subtitle" id="daniela-main-subheading">
+          Cuidado médico integral, cálido y profesional en la tranquilidad de tu hogar. Protege la salud de tu mascota todo el año con seguimiento clínico digital 24/7, vacunas al día y atención prioritaria.
+        </p>
+
+        <div class="daniela-hero-cta-row">
+          <a href="#daniela-pricing-section" class="btn-daniela-primary-cta">
+            <span>💖</span> Ver Membresía Cuidado Continuo ($8.990/mes)
+          </a>
+          <a href="#client-intent-hero" class="btn-daniela-secondary-cta">
+            <span>🎙️</span> Evaluar Síntomas / Agendar Consulta Ahora
+          </a>
+        </div>
+
+        <div class="daniela-trust-metrics">
+          <div class="daniela-metric-item">
+            <span class="metric-dot-magenta">✓</span>
+            <span>Registro Colmevet & SAG Vigente</span>
+          </div>
+          <div class="daniela-metric-item">
+            <span class="metric-dot-orange">✓</span>
+            <span>Receta Digital PDF y Carné 24/7</span>
+          </div>
+          <div class="daniela-metric-item">
+            <span class="metric-dot-purple">✓</span>
+            <span>Recordatorios Automáticos WhatsApp</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN DE SUSCRIPCIÓN: TARJETA DE PRECIO DESTACADA (PRICING CARD) -->
+      <div class="daniela-pricing-section" id="daniela-pricing-section">
+        <div class="daniela-pricing-card glass-panel">
+          <div class="pricing-card-ribbon">
+            <span>🌟 PLAN PREVENTIVO ANUAL DESTACADO</span>
+          </div>
+
+          <div class="pricing-card-header">
+            <div class="pricing-plan-tag">Cuidado Preventivo Integral en Casa</div>
+            <h2 class="pricing-plan-title">Membresía Cuidado Continuo</h2>
+            <p class="pricing-plan-desc">Todo lo que tu mascota necesita para mantenerse sana, protegida y con su calendario clínico al día durante todo el año.</p>
+
+            <div class="pricing-amount-box">
+              <span class="pricing-currency">$</span>
+              <span class="pricing-price-number">8.990</span>
+              <div class="pricing-period-col">
+                <span class="pricing-period-main">mensuales</span>
+                <span class="pricing-period-sub">por mascota · IVA incl.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pricing-benefits-divider">
+            <span>BENEFICIOS INCLUIDOS EN TU SUSCRIPCIÓN</span>
+          </div>
+
+          <!-- Lista exacta de los 5 beneficios con iconos check -->
+          <ul class="pricing-benefits-list">
+            <li class="pricing-benefit-item">
+              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <div class="benefit-text">
+                <strong>Cobertura Anual:</strong> Incluye la vacuna Óctuple/Triple y Antirrábica al cumplir el año de suscripción (o antes si llevan meses acumulados).
+              </div>
+            </li>
+            <li class="pricing-benefit-item">
+              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <div class="benefit-text">
+                <strong>1 Consulta a Domicilio Gratis al Año:</strong> Para controles sanos o dudas generales.
+              </div>
+            </li>
+            <li class="pricing-benefit-item">
+              <span class="benefit-check-icon accent-orange" aria-hidden="true">✓</span>
+              <div class="benefit-text">
+                <strong>Descuento en Consultas Extra:</strong> 20% de descuento en consultas de urgencia o adicionales.
+              </div>
+            </li>
+            <li class="pricing-benefit-item">
+              <span class="benefit-check-icon accent-purple" aria-hidden="true">✓</span>
+              <div class="benefit-text">
+                <strong>Historial Clínico en Vivo:</strong> Acceso 24/7 a la app con las fechas de vacunación, desparasitación y notas clínicas de su mascota.
+              </div>
+            </li>
+            <li class="pricing-benefit-item">
+              <span class="benefit-check-icon" aria-hidden="true">✓</span>
+              <div class="benefit-text">
+                <strong>Recordatorios Automáticos:</strong> La app avisa cuándo toca la próxima vacuna o desparasitación.
+              </div>
+            </li>
+          </ul>
+
+          <!-- Botón de Call to Action Atractivo -->
+          <div class="pricing-cta-box">
+            <button type="button" class="btn-subscribe-pet" id="btn-open-subscribe-modal">
+              <span class="cta-sparkle">🐾</span>
+              <span>Suscribir a mi mascota</span>
+              <span class="cta-arrow">→</span>
+            </button>
+            <p class="pricing-cta-subnote">
+              🔒 Activación inmediata desde tu celular · Acceso 24/7 al carnet digital y respaldo Ley 21.719
+            </p>
+          </div>
+        </div>
+
+        <!-- WIDGET DE ACCESO 24/7 AL HISTORIAL CLÍNICO EN VIVO & RECORDATORIOS -->
+        <div class="daniela-live-carnet-card glass-panel" id="daniela-live-carnet-section">
+          <div class="live-carnet-header">
+            <span class="carnet-badge-purple">📱 HISTORIAL CLÍNICO EN VIVO 24/7</span>
+            <h3>Consulta el Carné, Vacunas y Notas Clínicas de tu Mascota</h3>
+            <p>Si ya eres parte de la Membresía Cuidado Continuo o te atendiste con la Dra. Daniela Alcázar, revisa aquí tus próximas fechas de vacuna, desparasitación y recetas en PDF:</p>
+          </div>
+          <div class="live-carnet-search-bar">
+            <input type="text" id="input-carnet-lookup" class="clinical-input" placeholder="Ingresa tu WhatsApp (+569...) o el nombre de tu mascota (ej: Max, Luna)...">
+            <button type="button" class="btn-carnet-search" id="btn-carnet-lookup">
+              🔍 Ver Historial 24/7
+            </button>
+          </div>
+          <div class="live-carnet-results hidden" id="live-carnet-results"></div>
+        </div>
+      </div>
+
+      <!-- ESTADO 1: LIENZO MINIMALISTA DE INTENCIÓN (TRIAJE CLÍNICO CON IA COVET) -->
       <div class="client-intent-hero" id="client-intent-hero">
         <div class="glass-panel client-canvas-card">
           <div class="client-canvas-header">
-            <h1 class="client-main-title">¿Qué le ocurre a tu mascota?</h1>
-            <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el riesgo vital, te dará primeros auxilios y coordinará su atención médica.</p>
+            <span class="daniela-pill-magenta" style="margin-bottom: 0.5rem; display: inline-block;">🤖 Asistente Clínico de Triaje & Agenda a Domicilio</span>
+            <h2 class="client-main-title">¿Tu mascota presenta síntomas hoy o necesitas agendar visita?</h2>
+            <p class="client-main-subtitle">Habla o escribe sus síntomas. Nuestro Agente Clínico evaluará el nivel de urgencia, te entregará primeros auxilios y coordinará tu visita a domicilio con la Dra. Daniela Alcázar.</p>
           </div>
 
           <!-- Botón Central de Micrófono -->
@@ -867,6 +998,25 @@
               </div>
             </section>
           </div>
+
+          <!-- Panel de Suscriptores Membresía Cuidado Continuo ($8.990/mes) -->
+          <section class="panel-card glass-panel" id="vet-memberships-panel" style="margin-top: 1.25rem;">
+            <div class="panel-header flex-between">
+              <div>
+                <h2>💖 Suscriptores Membresía Cuidado Continuo ($8.990/mes)</h2>
+                <p>Control de vacunas anuales (Óctuple/Triple + Antirrábica), consulta domicilio gratis y carné 24/7</p>
+              </div>
+              <button class="btn-refresh" id="btn-refresh-memberships" title="Refrescar membresías">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+            <div class="appointments-container" id="vet-memberships-list">
+              <div class="loading-state">
+                <span class="spinner"></span>
+                <p>Cargando suscriptores activos...</p>
+              </div>
+            </div>
+          </section>
         </section>
 
         <!-- TAB 3: HISTORIAL DE FICHAS -->
@@ -1131,7 +1281,15 @@
               <label class="brand-subheading">Color Primario Clínico:</label>
               <div class="color-swatches-row" id="color-swatches-container">
                 <label class="color-swatch-item">
-                  <input type="radio" name="brand-color-choice" value="#0D9488" checked />
+                  <input type="radio" name="brand-color-choice" value="#E91E63" checked />
+                  <span class="color-dot" style="background-color: #E91E63;"></span>
+                  <span class="color-meta">
+                    <strong>Clinical Magenta</strong>
+                    <code>#E91E63</code>
+                  </span>
+                </label>
+                <label class="color-swatch-item">
+                  <input type="radio" name="brand-color-choice" value="#0D9488" />
                   <span class="color-dot" style="background-color: #0D9488;"></span>
                   <span class="color-meta">
                     <strong>Surgical Teal</strong>
@@ -1306,23 +1464,147 @@
       </div>
     </div>
 
-    <!-- MODAL DE PIN PARA MODO VETERINARIO -->
+    <!-- ======================================================= -->
+    <!-- VISTA 2 / PORTAL DE ACCESO EXCLUSIVO (LOGIN CERRADO VET) -->
+    <!-- ======================================================= -->
     <div class="modal-backdrop hidden" id="modal-vet-pin">
-      <div class="glass-panel modal-pin-card">
+      <div class="glass-panel modal-pin-card daniela-login-portal-card">
         <div class="modal-pin-header">
+          <div class="daniela-login-lock-badge">🔒 ACCESO INTERNO CERRADO</div>
           <span class="pin-shield-icon">🩺</span>
-          <h3>Ingreso Médico Veterinario</h3>
-          <p>Ingresa tu PIN clínico para desbloquear la sesión médica y acceder a las fichas de pacientes.</p>
+          <h3 id="vet-portal-login-title">Portal Clínico - Acceso Exclusivo Dra. Daniela Alcázar</h3>
+          <p>Autenticación médica restringida. Ingresa tus credenciales clínicas para acceder al dictado SOAP con IA, agenda e historial.</p>
         </div>
-        <div class="pin-input-wrap">
-          <input type="password" id="input-vet-pin" maxlength="6" class="pin-input font-mono" placeholder="••••" autofocus>
-          <div class="pin-error-text hidden" id="pin-error-text">PIN incorrecto. Reintenta con 2026.</div>
+
+        <form id="form-vet-exclusive-login" class="daniela-login-form" onsubmit="return false;">
+          <div class="daniela-login-field">
+            <label for="input-vet-login-email">Email Profesional *</label>
+            <input
+              type="email"
+              id="input-vet-login-email"
+              class="clinical-input"
+              placeholder="daniela@alcazarvet.cl"
+              value="daniela@alcazarvet.cl"
+              required
+              autocomplete="username"
+            >
+          </div>
+
+          <div class="daniela-login-field">
+            <label for="input-vet-login-password">Contraseña *</label>
+            <input
+              type="password"
+              id="input-vet-login-password"
+              class="clinical-input font-mono"
+              placeholder="••••••••••••"
+              required
+              autocomplete="current-password"
+            >
+            <!-- Compatibilidad oculta con flujo PIN interno -->
+            <input type="hidden" id="input-vet-pin" value="2026">
+          </div>
+
+          <div class="pin-error-text hidden" id="pin-error-text">
+            Credenciales inválidas. Verifica tu correo y contraseña de acceso exclusivo.
+          </div>
+
+          <div class="pin-actions-wrap">
+            <button type="submit" class="btn-pin-submit btn-daniela-login-submit" id="btn-submit-vet-pin">
+              Ingresar al sistema
+            </button>
+            <button type="button" class="btn-pin-demo-autofill" id="btn-autofill-demo-pin">
+              ⚡ Acceso Rápido Dra. Daniela (Demo 1-Clic)
+            </button>
+            <button type="button" class="btn-login-back-client" id="btn-login-back-client">
+              ← Volver a la Página Pública de Clientes
+            </button>
+          </div>
+
+          <div class="daniela-login-closed-note">
+            <span>🛡️ Entrada cerrada de uso interno exclusivo · Sin registro público · Protegido bajo Ley N° 21.719</span>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- MODAL DE SUSCRIPCIÓN: MEMBRESÍA CUIDADO CONTINUO ($8.990)-->
+    <!-- ======================================================= -->
+    <div class="modal-backdrop hidden" id="modal-subscribe-membership">
+      <div class="glass-panel modal-privacy-card daniela-subscribe-modal-card">
+        <div class="modal-privacy-header">
+          <div class="privacy-icon-pill" style="background: rgba(233, 30, 99, 0.12); color: #e91e63; border-color: rgba(233, 30, 99, 0.3);">
+            💖 MEMBRESÍA CUIDADO CONTINUO · $8.990/MES
+          </div>
+          <h3>Suscribir a mi mascota con la Dra. Daniela Alcázar</h3>
+          <button type="button" class="btn-close-modal" id="btn-close-subscribe-modal" title="Cerrar modal">&times;</button>
         </div>
-        <div class="pin-actions-wrap">
-          <button type="button" class="btn-pin-submit" id="btn-submit-vet-pin">Desbloquear Panel</button>
-          <button type="button" class="btn-pin-demo-autofill" id="btn-autofill-demo-pin">
-            ⚡ Demo Auto-Desbloqueo (PIN: 2026)
-          </button>
+
+        <div class="modal-privacy-body">
+          <form id="form-subscribe-membership" class="daniela-subscribe-form">
+            <div class="form-grid-2">
+              <div class="clinical-field">
+                <label for="sub-tutor-nombre">Tu Nombre y Apellido *</label>
+                <input type="text" id="sub-tutor-nombre" class="clinical-input" required placeholder="Ej: Camila Valdés">
+              </div>
+              <div class="clinical-field">
+                <label for="sub-tutor-telefono">Tu WhatsApp (+569...) *</label>
+                <input type="tel" id="sub-tutor-telefono" class="clinical-input font-mono" required placeholder="+56987654321">
+              </div>
+            </div>
+
+            <div class="form-grid-2" style="margin-top: 0.75rem;">
+              <div class="clinical-field">
+                <label for="sub-tutor-email">Correo Electrónico</label>
+                <input type="email" id="sub-tutor-email" class="clinical-input" placeholder="tu@correo.cl">
+              </div>
+              <div class="clinical-field">
+                <label for="sub-tutor-direccion">Dirección para Visita a Domicilio *</label>
+                <input type="text" id="sub-tutor-direccion" class="clinical-input" required placeholder="Comuna, calle y número">
+              </div>
+            </div>
+
+            <div class="form-grid-3" style="margin-top: 0.75rem;">
+              <div class="clinical-field">
+                <label for="sub-paciente-nombre">Nombre de tu Mascota *</label>
+                <input type="text" id="sub-paciente-nombre" class="clinical-input" required placeholder="Ej: Canela">
+              </div>
+              <div class="clinical-field">
+                <label for="sub-paciente-especie">Especie *</label>
+                <select id="sub-paciente-especie" class="clinical-input">
+                  <option value="Canino">Perro (Canino) 🐶</option>
+                  <option value="Felino">Gato (Felino) 🐱</option>
+                </select>
+              </div>
+              <div class="clinical-field">
+                <label for="sub-paciente-raza">Raza / Edad aprox.</label>
+                <input type="text" id="sub-paciente-raza" class="clinical-input" placeholder="Ej: Mestizo, 2 años">
+              </div>
+            </div>
+
+            <div class="daniela-subscribe-summary-box">
+              <div><strong>Plan seleccionado:</strong> Membresía Cuidado Continuo — Dra. Daniela Alcázar</div>
+              <div><strong>Valor mensual:</strong> <span style="color: #e91e63; font-weight: 800;">$8.990 CLP / mes</span></div>
+              <small>✓ Incluye Vacuna Óctuple/Triple + Antirrábica anual, 1 Consulta a Domicilio Gratis/año, 20% dcto. en consultas extra, Historial 24/7 y Recordatorios Automáticos.</small>
+            </div>
+
+            <label class="privacy-checkbox-label" for="sub-consent-ley21719" style="margin-top: 0.75rem;">
+              <input type="checkbox" id="sub-consent-ley21719" checked required class="privacy-checkbox">
+              <span class="privacy-consent-text">
+                Acepto los términos de la Membresía Cuidado Continuo y el tratamiento de datos clínicos conforme a la <strong>Ley N° 21.719</strong> para recordatorios de vacunación y atención a domicilio.
+              </span>
+            </label>
+
+            <div style="margin-top: 1rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+              <button type="submit" class="btn-subscribe-pet" id="btn-confirm-subscription" style="width: 100%;">
+                <span>🐾</span>
+                <span id="btn-confirm-subscription-text">Activar Membresía ($8.990/mes) y Crear Carné 24/7</span>
+              </button>
+            </div>
+          </form>
+
+          <!-- Resultado exitoso de suscripción -->
+          <div class="daniela-subscription-success hidden" id="daniela-subscription-success"></div>
         </div>
       </div>
     </div>

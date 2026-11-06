@@ -4425,5 +4425,539 @@ body[data-active-view="client"] .theme-toggle-btn {
   color: var(--text-main);
 }
 
+/* ======================================================== */
+/* DRA. DANIELA ALCÁZAR — LANDING PAGE, PRICING & PORTAL    */
+/* Paleta: Magenta #E91E63, Naranjo #F97316, Morado #8B5CF6 */
+/* ======================================================== */
+:root {
+  --daniela-magenta: #e91e63;
+  --daniela-magenta-dark: #c2185b;
+  --daniela-magenta-soft: rgba(233, 30, 99, 0.1);
+  --daniela-orange: #f97316;
+  --daniela-orange-soft: rgba(249, 115, 22, 0.12);
+  --daniela-purple: #8b5cf6;
+  --daniela-purple-soft: rgba(139, 92, 246, 0.12);
+  --daniela-bg-clean: #ffffff;
+  --daniela-bg-subtle: #f8fafc;
+}
+
+.daniela-accent-icon {
+  background: linear-gradient(135deg, var(--daniela-magenta) 0%, var(--daniela-purple) 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.25);
+}
+
+.daniela-hero-banner {
+  background: linear-gradient(180deg, #ffffff 0%, #fdf2f8 65%, #f8fafc 100%);
+  border: 1.5px solid rgba(233, 30, 99, 0.22);
+  border-radius: 18px;
+  padding: 1.75rem 1.35rem;
+  margin-bottom: 1.5rem;
+  text-align: center;
+  box-shadow: 0 10px 30px -10px rgba(233, 30, 99, 0.12);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.daniela-hero-pills-row,
+.daniela-hero-\ pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.daniela-pill-magenta,
+.daniela-pill-purple,
+.daniela-pill-orange {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+}
+
+.daniela-pill-magenta {
+  background: var(--daniela-magenta-soft);
+  color: var(--daniela-magenta-dark);
+  border: 1px solid rgba(233, 30, 99, 0.28);
+}
+
+.daniela-pill-purple {
+  background: var(--daniela-purple-soft);
+  color: #6d28d9;
+  border: 1px solid rgba(139, 92, 246, 0.28);
+}
+
+.daniela-pill-orange {
+  background: var(--daniela-orange-soft);
+  color: #c2410c;
+  border: 1px solid rgba(249, 115, 22, 0.28);
+}
+
+.daniela-hero-title {
+  font-size: clamp(1.5rem, 4.8vw, 2.35rem);
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.2;
+  margin: 0 auto 0.85rem auto;
+  max-width: 760px;
+  letter-spacing: -0.02em;
+}
+
+.daniela-hero-subtitle {
+  font-size: clamp(0.92rem, 2.6vw, 1.06rem);
+  color: #475569;
+  line-height: 1.55;
+  max-width: 660px;
+  margin: 0 auto 1.35rem auto;
+}
+
+.daniela-hero-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-bottom: 1.35rem;
+}
+
+.btn-daniela-primary-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #e91e63 0%, #d81b60 60%, #8b5cf6 100%);
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 0.85rem 1.4rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px -4px rgba(233, 30, 99, 0.4);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-daniela-primary-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 24px -4px rgba(233, 30, 99, 0.5);
+}
+
+.btn-daniela-secondary-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1.5px solid #cbd5e1;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 0.92rem;
+  padding: 0.85rem 1.25rem;
+  border-radius: 12px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.btn-daniela-secondary-cta:hover {
+  border-color: var(--daniela-magenta);
+  background: #fdf2f8;
+}
+
+.daniela-trust-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.85rem 1.35rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(226, 232, 240, 0.9);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.daniela-metric-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.metric-dot-magenta,
+.metric-dot-orange,
+.metric-dot-purple {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+.metric-dot-magenta { background: var(--daniela-magenta); }
+.metric-dot-orange { background: var(--daniela-orange); }
+.metric-dot-purple { background: var(--daniela-purple); }
+
+/* SECCIÓN DE SUSCRIPCIÓN & PRICING CARD DESTACADA */
+.daniela-pricing-section {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.35rem;
+  margin-bottom: 1.75rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+@media (min-width: 960px) {
+  .daniela-pricing-section {
+    grid-template-columns: 1.25fr 0.95fr;
+    align-items: start;
+  }
+}
+
+.daniela-pricing-card {
+  background: #ffffff;
+  border: 2px solid var(--daniela-magenta);
+  border-radius: 20px;
+  padding: 1.75rem 1.35rem;
+  box-shadow: 0 16px 38px -12px rgba(233, 30, 99, 0.18);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.pricing-card-ribbon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: linear-gradient(90deg, var(--daniela-magenta) 0%, var(--daniela-orange) 100%);
+  color: #ffffff;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  margin-bottom: 1rem;
+}
+
+.pricing-plan-tag {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--daniela-purple);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.25rem;
+}
+
+.pricing-plan-title {
+  font-size: clamp(1.35rem, 4.2vw, 1.8rem);
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 0.5rem 0;
+}
+
+.pricing-plan-desc {
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0 0 1.25rem 0;
+}
+
+.pricing-amount-box {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  background: #fdf2f8;
+  border: 1px solid rgba(233, 30, 99, 0.22);
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.pricing-currency {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--daniela-magenta);
+}
+
+.pricing-price-number {
+  font-size: clamp(2.1rem, 6vw, 2.75rem);
+  font-weight: 900;
+  color: #0f172a;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.pricing-period-col {
+  display: flex;
+  flex-direction: column;
+  margin-left: 0.35rem;
+}
+
+.pricing-period-main {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--daniela-magenta-dark);
+}
+
+.pricing-period-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.pricing-benefits-divider {
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: #64748b;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 0.95rem;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.45rem;
+}
+
+.pricing-benefits-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pricing-benefit-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.8rem 0.95rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #1e293b;
+}
+
+.benefit-check-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--daniela-magenta);
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+  box-shadow: 0 2px 6px rgba(233, 30, 99, 0.3);
+}
+
+.benefit-check-icon.accent-orange {
+  background: var(--daniela-orange);
+  box-shadow: 0 2px 6px rgba(249, 115, 22, 0.3);
+}
+
+.benefit-check-icon.accent-purple {
+  background: var(--daniela-purple);
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.3);
+}
+
+.benefit-text strong {
+  color: #0f172a;
+}
+
+.btn-subscribe-pet {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: linear-gradient(135deg, #e91e63 0%, #c2185b 55%, #f97316 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 14px;
+  padding: 1rem 1.35rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 10px 24px -6px rgba(233, 30, 99, 0.45);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-subscribe-pet:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px -6px rgba(233, 30, 99, 0.55);
+}
+
+.pricing-cta-subnote {
+  margin: 0.65rem 0 0 0;
+  font-size: 0.78rem;
+  color: #64748b;
+  text-align: center;
+}
+
+/* TARJETA HISTORIAL CLÍNICO EN VIVO 24/7 */
+.daniela-live-carnet-card {
+  background: #ffffff;
+  border: 1.5px solid rgba(139, 92, 246, 0.28);
+  border-radius: 18px;
+  padding: 1.5rem 1.25rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.carnet-badge-purple {
+  display: inline-block;
+  background: var(--daniela-purple-soft);
+  color: #6d28d9;
+  font-size: 0.74rem;
+  font-weight: 800;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  margin-bottom: 0.55rem;
+}
+
+.live-carnet-header h3 {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 0.4rem 0;
+}
+
+.live-carnet-header p {
+  font-size: 0.85rem;
+  color: #475569;
+  margin: 0 0 1rem 0;
+  line-height: 1.45;
+}
+
+.live-carnet-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+@media (min-width: 540px) {
+  .live-carnet-search-bar {
+    flex-direction: row;
+  }
+}
+
+.btn-carnet-search {
+  background: var(--daniela-purple);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.75rem 1.1rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.live-carnet-results {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* PORTAL DE ACCESO EXCLUSIVO (LOGIN DE VETERINARIA) */
+.daniela-login-portal-card {
+  max-width: 440px !important;
+  border: 2px solid rgba(233, 30, 99, 0.28) !important;
+  background: #ffffff !important;
+  box-shadow: 0 20px 45px -12px rgba(15, 23, 42, 0.22) !important;
+}
+
+.daniela-login-lock-badge {
+  display: inline-block;
+  background: var(--daniela-magenta-soft);
+  color: var(--daniela-magenta-dark);
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  margin-bottom: 0.5rem;
+  letter-spacing: 0.04em;
+}
+
+.daniela-login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  text-align: left;
+  margin-top: 0.75rem;
+}
+
+.daniela-login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.daniela-login-field label {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.btn-daniela-login-submit {
+  background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%) !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  font-size: 0.98rem !important;
+  padding: 0.85rem 1.25rem !important;
+  border-radius: 12px !important;
+  border: none !important;
+  cursor: pointer;
+  box-shadow: 0 8px 18px -4px rgba(233, 30, 99, 0.4) !important;
+}
+
+.btn-login-back-client {
+  background: transparent;
+  border: 1px solid #cbd5e1;
+  color: #475569;
+  padding: 0.6rem 1rem;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.daniela-login-closed-note {
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.85rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.daniela-subscribe-summary-box {
+  margin-top: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: #fdf2f8;
+  border: 1px solid rgba(233, 30, 99, 0.25);
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #1e293b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+
 
 

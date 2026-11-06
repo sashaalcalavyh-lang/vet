@@ -205,42 +205,115 @@ if (btnThemeToggle) {
   });
 }
 
-// Validación de PIN Clínico Veterinario (Demo PIN: 2026)
+// Validación del Portal Clínico - Acceso Exclusivo Dra. Daniela Alcázar (Email + Contraseña)
+const formVetExclusiveLogin = document.getElementById('form-vet-exclusive-login');
+const inputVetLoginEmail = document.getElementById('input-vet-login-email');
+const inputVetLoginPassword = document.getElementById('input-vet-login-password');
+const btnLoginBackClient = document.getElementById('btn-login-back-client');
+
 function isVetUnlocked() {
   return sessionStorage.getItem('covet_vet_unlocked') === 'true';
 }
 
-function unlockVetSession() {
+function unlockVetSession(authData = null) {
   sessionStorage.setItem('covet_vet_unlocked', 'true');
+  if (authData && authData.session_token) {
+    sessionStorage.setItem('covet_vet_token', authData.session_token);
+  }
+  if (!activeVetSlug) {
+    activeVetSlug = (authData && authData.clinica_slug) || 'dra-daniela-alcazar';
+  }
+  document.documentElement.style.setProperty('--teal-primary', (authData && authData.color_primario) || '#E91E63');
+  document.documentElement.style.setProperty('--teal-hover', '#C2185B');
   if (modalVetPin) modalVetPin.classList.add('hidden');
   activateVetView();
 }
 
-if (btnSubmitVetPin && inputVetPin) {
-  btnSubmitVetPin.addEventListener('click', () => {
-    const entered = inputVetPin.value.trim();
-    if (entered === '2026') {
-      pinErrorText.classList.add('hidden');
-      unlockVetSession();
-      showToast('Sesión médica veterinaria desbloqueada.', 'success');
-    } else {
-      pinErrorText.classList.remove('hidden');
-      inputVetPin.value = '';
-      inputVetPin.focus();
-    }
-  });
+async function handleExclusiveVetLogin() {
+  const email = inputVetLoginEmail ? inputVetLoginEmail.value.trim() : 'daniela@alcazarvet.cl';
+  const password = inputVetLoginPassword ? inputVetLoginPassword.value.trim() : '';
 
-  inputVetPin.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') btnSubmitVetPin.click();
+  if (!email || !password) {
+    if (pinErrorText) {
+      pinErrorText.textContent = 'Ingresa tu correo profesional y contraseña para acceder al sistema.';
+      pinErrorText.classList.remove('hidden');
+    }
+    return;
+  }
+
+  if (btnSubmitVetPin) {
+    btnSubmitVetPin.disabled = true;
+    btnSubmitVetPin.textContent = 'Verificando credenciales...';
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/vet/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        clinica_slug: activeVetSlug || 'dra-daniela-alcazar'
+      })
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      throw new Error(errJson.detail || 'Credenciales inválidas.');
+    }
+
+    const authData = await res.json();
+    if (pinErrorText) pinErrorText.classList.add('hidden');
+    unlockVetSession(authData);
+    showToast(`Bienvenida, ${authData.profesional || 'Dra. Daniela Alcázar'}. Portal Clínico activo.`, 'success');
+  } catch (err) {
+    if (pinErrorText) {
+      pinErrorText.textContent = err.message || 'Credenciales inválidas.';
+      pinErrorText.classList.remove('hidden');
+    }
+    if (inputVetLoginPassword) {
+      inputVetLoginPassword.value = '';
+      inputVetLoginPassword.focus();
+    }
+  } finally {
+    if (btnSubmitVetPin) {
+      btnSubmitVetPin.disabled = false;
+      btnSubmitVetPin.textContent = 'Ingresar al sistema';
+    }
+  }
+}
+
+if (formVetExclusiveLogin) {
+  formVetExclusiveLogin.addEventListener('submit', (e) => {
+    e.preventDefault();
+    handleExclusiveVetLogin();
   });
+} else if (btnSubmitVetPin) {
+  btnSubmitVetPin.addEventListener('click', handleExclusiveVetLogin);
 }
 
 if (btnAutofillDemoPin) {
   btnAutofillDemoPin.addEventListener('click', () => {
-    if (inputVetPin) inputVetPin.value = '2026';
-    unlockVetSession();
-    showToast('Auto-desbloqueo de demo completado (PIN: 2026).', 'info');
+    if (inputVetLoginEmail) inputVetLoginEmail.value = 'daniela@alcazarvet.cl';
+    if (inputVetLoginPassword) inputVetLoginPassword.value = 'Daniela2026!';
+    handleExclusiveVetLogin();
   });
+}
+
+if (btnLoginBackClient) {
+  btnLoginBackClient.addEventListener('click', () => {
+    if (modalVetPin) modalVetPin.classList.add('hidden');
+    switchMainMode('client');
+  });
+}
+
+function buildQueryWithVet(viewName) {
+  const params = new URLSearchParams(window.location.search);
+  const vetParam = activeVetSlug || params.get('vet') || params.get('clinic');
+  if (vetParam) {
+    return `?vet=${encodeURIComponent(vetParam)}&view=${encodeURIComponent(viewName)}`;
+  }
+  return `?view=${encodeURIComponent(viewName)}`;
 }
 
 // Selector de Modo Principal (Cliente vs Veterinario vs SuperAdmin Sasha)
@@ -273,17 +346,17 @@ function switchMainMode(mode) {
 
     // 4. Actualizar URL sin recargar
     try {
-      window.history.replaceState({}, '', '?view=client');
+      window.history.replaceState({}, '', buildQueryWithVet('client'));
     } catch (_) {}
 
-  } else if (mode === 'vet') {
-    // Si no está desbloqueado el PIN médico, mostrar modal
-    if (!isVetUnlocked()) {
+  } else if (mode === 'vet' || mode === 'login') {
+    // Si se pide ?view=login explícitamente o aún no está autenticado el portal clínico, mostrar Login Exclusivo
+    if (mode === 'login' || !isVetUnlocked()) {
       if (modalVetPin) {
         modalVetPin.classList.remove('hidden');
-        if (inputVetPin) {
-          inputVetPin.value = '';
-          inputVetPin.focus();
+        if (inputVetLoginPassword) {
+          inputVetLoginPassword.value = '';
+          inputVetLoginPassword.focus();
         }
       }
       return;
@@ -315,7 +388,7 @@ function switchMainMode(mode) {
     document.body.className = 'theme-light';
 
     try {
-      window.history.replaceState({}, '', '?view=admin');
+      window.history.replaceState({}, '', buildQueryWithVet('admin'));
     } catch (_) {}
 
     loadAdminMetrics();
@@ -348,13 +421,22 @@ function activateVetView() {
   document.body.className = savedVetTheme === 'clinical-dark' ? 'theme-dark' : 'theme-light';
   updateThemeIcon(savedVetTheme);
 
+  // Actualizar título del panel con identidad de la Dra. Daniela Alcázar
+  const vetBrandTitle = document.querySelector('#view-vet .brand-title');
+  if (vetBrandTitle) {
+    vetBrandTitle.innerHTML = `Dra. Daniela Alcázar <span class="badge-tag" style="background: rgba(233,30,99,0.14); color: #e91e63;">Portal Clínico</span>`;
+  }
+
   // Actualizar URL sin recargar
   try {
-    window.history.replaceState({}, '', '?view=vet');
+    window.history.replaceState({}, '', buildQueryWithVet('vet'));
   } catch (_) {}
 
-  // Sincronización en vivo con la Agenda en PostgreSQL
+  // Sincronización en vivo con la Agenda y Suscriptores en PostgreSQL
   loadAppointmentsData();
+  if (typeof loadVetMembershipsList === 'function') {
+    loadVetMembershipsList();
+  }
 }
 
 btnModeClient.addEventListener('click', () => switchMainMode('client'));
@@ -380,12 +462,13 @@ if (btnUnderstandPrivacy) {
   });
 }
 
-// Detección de Parámetro URL (?view=admin, ?view=vet o ?view=client)
+// Detección de Parámetro URL (?view=admin, ?view=vet, ?view=login o ?view=client)
 const initialUrlParams = new URLSearchParams(window.location.search);
 const queryView = initialUrlParams.get('view');
 let initialView = 'client';
 if (queryView === 'admin') initialView = 'admin';
 else if (queryView === 'vet') initialView = 'vet';
+else if (queryView === 'login') initialView = 'login';
 switchMainMode(initialView);
 
 
@@ -1959,6 +2042,12 @@ function handleRealtimeClinicalEvent(evt) {
     loadAppointmentsData(d.cita_id || null);
   } else if (evt.event_type === 'FICHE_CONFIRMED') {
     loadFichesHistory();
+  } else if (evt.event_type === 'MEMBERSHIP_SUBSCRIBED') {
+    const d = evt.data || {};
+    showToast(`💖 Nueva Membresía Cuidado Continuo: ${d.paciente_nombre || 'Mascota'} (${d.tutor_nombre || 'Tutor'})`, 'success');
+    if (typeof loadVetMembershipsList === 'function') {
+      loadVetMembershipsList();
+    }
   }
 }
 
@@ -2645,6 +2734,7 @@ if (brandInputSlug) {
 }
 
 const SECONDARY_COLOR_MAP = {
+  '#E91E63': '#C2185B',
   '#0D9488': '#0F766E',
   '#2563EB': '#1D4ED8',
   '#7C3AED': '#6D28D9',
@@ -3023,11 +3113,10 @@ window.addEventListener('online', () => {
   showToast('📡 Conexión a internet restablecida.', 'success');
 });
 
-// Inicialización de Marca Blanca desde la URL (?vet=nombre-marca)
+// Inicialización de Marca Blanca desde la URL (?vet=nombre-marca, por defecto dra-daniela-alcazar)
 async function initWhiteLabelBranding() {
   const urlParams = new URLSearchParams(window.location.search);
-  const slug = urlParams.get('vet') || urlParams.get('clinic');
-  if (!slug) return;
+  const slug = urlParams.get('vet') || urlParams.get('clinic') || 'dra-daniela-alcazar';
 
   try {
     const res = await fetch(`${API_BASE}/api/v1/covet/branding/${encodeURIComponent(slug.toLowerCase().trim())}`);
@@ -3036,7 +3125,7 @@ async function initWhiteLabelBranding() {
     activeVetSlug = data.slug;
     activeBranding = data;
 
-    // Aplicar colores corporativos personalizados
+    // Aplicar colores corporativos personalizados (Fucsia/Magenta #E91E63 para Dra. Daniela Alcázar)
     if (data.color_primario) {
       document.documentElement.style.setProperty('--teal-primary', data.color_primario);
       document.documentElement.style.setProperty('--teal-glow', `${data.color_primario}40`);
@@ -3045,15 +3134,15 @@ async function initWhiteLabelBranding() {
       document.documentElement.style.setProperty('--teal-hover', data.color_secundario);
     }
 
-    // Actualizar Encabezado con Nombre del Veterinario / Clínica
-    const clientHeroTitle = document.querySelector('.client-intent-hero h2');
-    if (clientHeroTitle && data.nombre_fantasia) {
-      clientHeroTitle.innerHTML = `Atención Veterinaria con <span class="white-label-badge">${escapeHtml(data.nombre_fantasia)}</span>`;
+    // Actualizar Hero Principal si es otra clínica White-Label distinta a Dra. Daniela Alcázar
+    const mainHeading = document.getElementById('daniela-main-heading');
+    if (mainHeading && data.nombre_fantasia && !data.slug.includes('daniela')) {
+      mainHeading.textContent = data.nombre_fantasia;
     }
 
-    const clientHeroSubtitle = document.querySelector('.client-intent-hero p');
-    if (clientHeroSubtitle && data.mensaje_bienvenida) {
-      clientHeroSubtitle.textContent = data.mensaje_bienvenida;
+    const headerBrandTitle = document.getElementById('client-header-brand-title');
+    if (headerBrandTitle && data.nombre_fantasia) {
+      headerBrandTitle.textContent = data.nombre_fantasia.split('-')[0].trim();
     }
 
     // Actualizar Responsable del Tratamiento en el Modal de Privacidad Ley 21.719
@@ -3069,6 +3158,260 @@ async function initWhiteLabelBranding() {
   } catch (err) {
     console.warn('[White-Label] Error cargando branding:', err);
   }
+}
+
+// ========================================================
+// 13. MEMBRESÍA CUIDADO CONTINUO ($8.990/MES) & CARNÉ 24/7
+// ========================================================
+const btnOpenSubscribeModal = document.getElementById('btn-open-subscribe-modal');
+const modalSubscribeMembership = document.getElementById('modal-subscribe-membership');
+const btnCloseSubscribeModal = document.getElementById('btn-close-subscribe-modal');
+const formSubscribeMembership = document.getElementById('form-subscribe-membership');
+const btnConfirmSubscription = document.getElementById('btn-confirm-subscription');
+const btnConfirmSubscriptionText = document.getElementById('btn-confirm-subscription-text');
+const danielaSubscriptionSuccess = document.getElementById('daniela-subscription-success');
+
+const inputCarnetLookup = document.getElementById('input-carnet-lookup');
+const btnCarnetLookup = document.getElementById('btn-carnet-lookup');
+const liveCarnetResults = document.getElementById('live-carnet-results');
+
+const vetMembershipsList = document.getElementById('vet-memberships-list');
+const btnRefreshMemberships = document.getElementById('btn-refresh-memberships');
+
+if (btnOpenSubscribeModal && modalSubscribeMembership) {
+  btnOpenSubscribeModal.addEventListener('click', () => {
+    modalSubscribeMembership.classList.remove('hidden');
+    if (formSubscribeMembership) formSubscribeMembership.classList.remove('hidden');
+    if (danielaSubscriptionSuccess) {
+      danielaSubscriptionSuccess.classList.add('hidden');
+      danielaSubscriptionSuccess.innerHTML = '';
+    }
+  });
+}
+
+if (btnCloseSubscribeModal && modalSubscribeMembership) {
+  btnCloseSubscribeModal.addEventListener('click', () => {
+    modalSubscribeMembership.classList.add('hidden');
+  });
+}
+
+if (formSubscribeMembership) {
+  formSubscribeMembership.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (btnConfirmSubscription) btnConfirmSubscription.disabled = true;
+    if (btnConfirmSubscriptionText) btnConfirmSubscriptionText.textContent = '⏳ Activando Membresía y Carné Digital...';
+
+    try {
+      const payload = {
+        tutor_nombre: document.getElementById('sub-tutor-nombre').value.trim(),
+        tutor_telefono: document.getElementById('sub-tutor-telefono').value.trim(),
+        tutor_email: document.getElementById('sub-tutor-email').value.trim() || null,
+        tutor_direccion: document.getElementById('sub-tutor-direccion').value.trim() || null,
+        paciente_nombre: document.getElementById('sub-paciente-nombre').value.trim(),
+        especie: document.getElementById('sub-paciente-especie').value,
+        raza: document.getElementById('sub-paciente-raza').value.trim() || 'Mestizo',
+        clinica_slug: activeVetSlug || 'dra-daniela-alcazar',
+        consentimiento_ley21719: document.getElementById('sub-consent-ley21719').checked
+      };
+
+      const res = await fetch(`${API_BASE}/api/v1/covet/membresias/suscribir`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      showToast(`¡Membresía Cuidado Continuo activada para ${data.paciente.nombre}!`, 'success');
+
+      const waMsg =
+        `💖 *Dra. Daniela Alcázar — Membresía Cuidado Continuo Activa*\n\n` +
+        `Hola Dra. Daniela, acabo de suscribir a mi mascota *${data.paciente.nombre}* (${data.paciente.especie}):\n` +
+        `• *Folio Membresía:* ${data.folio_membresia}\n` +
+        `• *Tutor(a):* ${data.tutor.nombre} (${data.tutor.telefono})\n` +
+        `• *Dirección:* ${data.tutor.direccion || 'Por coordinar'}\n` +
+        `• *Próxima Vacuna:* ${data.calendario_preventivo.proxima_vacuna}\n` +
+        `• *Próxima Desparasitación:* ${data.calendario_preventivo.proxima_desparasitacion}`;
+
+      const waLink = `https://wa.me/56994128890?text=${encodeURIComponent(waMsg)}`;
+
+      formSubscribeMembership.classList.add('hidden');
+      if (danielaSubscriptionSuccess) {
+        danielaSubscriptionSuccess.classList.remove('hidden');
+        danielaSubscriptionSuccess.innerHTML = `
+          <div style="text-align: center; padding: 0.75rem 0.25rem;">
+            <div style="font-size: 2.3rem; margin-bottom: 0.35rem;">🎉</div>
+            <h4 style="font-size: 1.2rem; color: #0f172a; margin: 0 0 0.35rem 0;">
+              ¡${escapeHtml(data.paciente.nombre)} ya es parte de la Membresía Cuidado Continuo!
+            </h4>
+            <p style="font-size: 0.86rem; color: #475569; margin: 0 0 0.85rem 0;">
+              Folio Oficial: <strong class="font-mono" style="color: #e91e63;">${escapeHtml(data.folio_membresia)}</strong> · Valor: <strong>$8.990/mes</strong>
+            </p>
+            <div style="text-align: left; background: #fdf2f8; border: 1px solid rgba(233,30,99,0.28); border-radius: 12px; padding: 0.85rem 1rem; font-size: 0.84rem; margin-bottom: 1rem;">
+              <div><strong>💉 Próxima Vacuna Anual:</strong> ${escapeHtml(data.calendario_preventivo.proxima_vacuna)}</div>
+              <div><strong>💊 Próxima Desparasitación:</strong> ${escapeHtml(data.calendario_preventivo.proxima_desparasitacion)}</div>
+              <div><strong>🏠 Consulta a Domicilio Gratis:</strong> 1 disponible este año</div>
+              <div><strong>⚡ Descuento Urgencias/Extra:</strong> 20% OFF activo</div>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.6rem;">
+              <a href="${waLink}" target="_blank" class="btn-subscribe-pet" style="text-decoration: none;">
+                <span>📲</span> Enviar Comprobante por WhatsApp a Dra. Daniela
+              </a>
+              <button type="button" class="btn-login-back-client" id="btn-done-subscribe">
+                Ver Historial Clínico 24/7 en la Página
+              </button>
+            </div>
+          </div>
+        `;
+        const btnDone = document.getElementById('btn-done-subscribe');
+        if (btnDone) {
+          btnDone.addEventListener('click', () => {
+            modalSubscribeMembership.classList.add('hidden');
+            if (inputCarnetLookup) inputCarnetLookup.value = data.paciente.nombre;
+            lookupLiveCarnet(data.paciente.nombre);
+          });
+        }
+      }
+
+      // Actualizar carné en vivo automáticamente
+      lookupLiveCarnet(data.paciente.nombre);
+      loadVetMembershipsList();
+    } catch (err) {
+      showToast(`Error al suscribir: ${err.message}`, 'error');
+    } finally {
+      if (btnConfirmSubscription) btnConfirmSubscription.disabled = false;
+      if (btnConfirmSubscriptionText) {
+        btnConfirmSubscriptionText.textContent = 'Activar Membresía ($8.990/mes) y Crear Carné 24/7';
+      }
+    }
+  });
+}
+
+async function lookupLiveCarnet(queryText = '') {
+  if (!liveCarnetResults) return;
+  const q = (queryText || (inputCarnetLookup ? inputCarnetLookup.value : '')).trim();
+  liveCarnetResults.classList.remove('hidden');
+  liveCarnetResults.innerHTML = `<div style="font-size: 0.85rem; color: #64748b;">⏳ Consultando historial clínico 24/7 en vivo...</div>`;
+
+  try {
+    let url = `${API_BASE}/api/v1/covet/membresias?limit=10`;
+    if (q) {
+      if (/\d{6,}/.test(q)) {
+        url += `&telefono=${encodeURIComponent(q)}`;
+      } else {
+        url += `&paciente_nombre=${encodeURIComponent(q)}`;
+      }
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const list = await res.json();
+
+    if (!Array.isArray(list) || list.length === 0) {
+      liveCarnetResults.innerHTML = `
+        <div style="padding: 0.85rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 0.84rem; color: #475569;">
+          No se encontraron mascotas con ese filtro. ¡Inscribe a tu mascota arriba con el botón <strong>"Suscribir a mi mascota"</strong>!
+        </div>
+      `;
+      return;
+    }
+
+    liveCarnetResults.innerHTML = list.map(m => {
+      const notasHtml = (m.notas_clinicas_24_7 && m.notas_clinicas_24_7.length > 0)
+        ? m.notas_clinicas_24_7.map(n => `
+            <div style="margin-top: 0.45rem; padding: 0.55rem 0.75rem; background: #ffffff; border-left: 3px solid #e91e63; border-radius: 6px; font-size: 0.8rem;">
+              <div><strong>📅 ${escapeHtml(n.fecha)} — Dx:</strong> ${escapeHtml(n.diagnostico)}</div>
+              ${n.resumen_amigable_tutor ? `<div style="color: #475569; margin-top: 0.15rem;">💬 ${escapeHtml(n.resumen_amigable_tutor)}</div>` : ''}
+              <a href="${API_BASE}${n.receta_pdf_url}" target="_blank" style="display: inline-block; margin-top: 0.25rem; color: #e91e63; font-weight: 700; text-decoration: none;">📄 Descargar Receta PDF Oficial ↗</a>
+            </div>
+          `).join('')
+        : `<div style="font-size: 0.78rem; color: #64748b; margin-top: 0.35rem;">✓ Sin patologías activas. Calendario preventivo al día.</div>`;
+
+      return `
+        <div style="padding: 0.95rem 1.05rem; background: #fdf2f8; border: 1.5px solid rgba(233,30,99,0.26); border-radius: 12px; font-size: 0.84rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.4rem;">
+            <strong style="font-size: 0.96rem; color: #0f172a;">🐾 ${escapeHtml(m.paciente_nombre)} (${escapeHtml(m.especie)} · ${escapeHtml(m.raza)})</strong>
+            <span style="background: #e91e63; color: #fff; font-size: 0.72rem; font-weight: 800; padding: 0.2rem 0.55rem; border-radius: 999px;">✓ MEMBRESÍA ACTIVA</span>
+          </div>
+          <div style="color: #475569; font-size: 0.8rem; margin-bottom: 0.45rem;">
+            Tutor(a): <strong>${escapeHtml(m.tutor_nombre)}</strong> · Folio: <code>${escapeHtml(m.folio_membresia)}</code>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr; gap: 0.3rem; background: #ffffff; padding: 0.65rem 0.8rem; border-radius: 8px; border: 1px solid #f1f5f9;">
+            <div>💉 <strong>Próxima Vacuna:</strong> ${escapeHtml(m.proxima_vacuna_fecha || 'Por programar')}</div>
+            <div>💊 <strong>Próxima Desparasitación:</strong> ${escapeHtml(m.proxima_desparasitacion_fecha || 'Por programar')}</div>
+            <div>🏠 <strong>Consulta Domicilio Gratis/Año:</strong> ${m.consulta_domicilio_gratis_usada ? 'Utilizada' : 'Disponible (1/1)'} · <strong>20% OFF Extra Activo</strong></div>
+          </div>
+          <div style="margin-top: 0.55rem;">
+            <strong style="font-size: 0.78rem; color: #6d28d9; text-transform: uppercase;">📋 Notas Clínicas & Recetas 24/7:</strong>
+            ${notasHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    liveCarnetResults.innerHTML = `<div style="font-size: 0.82rem; color: #dc2626;">Error consultando carné: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+if (btnCarnetLookup) {
+  btnCarnetLookup.addEventListener('click', () => lookupLiveCarnet());
+}
+if (inputCarnetLookup) {
+  inputCarnetLookup.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      lookupLiveCarnet();
+    }
+  });
+}
+
+async function loadVetMembershipsList() {
+  if (!vetMembershipsList) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/covet/membresias?limit=25`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const list = await res.json();
+
+    if (!Array.isArray(list) || list.length === 0) {
+      vetMembershipsList.innerHTML = `<div class="empty-state"><p>Aún no hay mascotas inscritas en la Membresía Cuidado Continuo.</p></div>`;
+      return;
+    }
+
+    vetMembershipsList.innerHTML = list.map(m => `
+      <div class="appointment-item" style="border-left: 4px solid #e91e63;">
+        <div class="cita-top-row" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:0.5rem;">
+          <div class="cita-pet">
+            <span>💖</span>
+            <strong>${escapeHtml(m.paciente_nombre)}</strong>
+            <small>(${escapeHtml(m.especie)} · Tutor: ${escapeHtml(m.tutor_nombre)} · ${escapeHtml(m.tutor_telefono)})</small>
+          </div>
+          <span class="cita-status-tag confirmed" style="background: rgba(233,30,99,0.14); color: #e91e63; border-color: rgba(233,30,99,0.3);">
+            ${escapeHtml(m.folio_membresia)} • $8.990/mes
+          </span>
+        </div>
+        <div class="cita-motivo" style="margin: 0.35rem 0; font-size: 0.84rem;">
+          💉 <strong>Vacuna:</strong> ${escapeHtml(m.proxima_vacuna_fecha)} &nbsp;|&nbsp;
+          💊 <strong>Desparasitación:</strong> ${escapeHtml(m.proxima_desparasitacion_fecha)}
+        </div>
+        <div class="cita-time" style="font-size:0.8rem; color:var(--text-dim);">
+          🏠 Consulta gratis anual: ${m.consulta_domicilio_gratis_usada ? 'Usada' : 'Disponible'} • 20% Dcto. Urgencias Activo • Inscrito: ${escapeHtml(m.fecha_inscripcion)}
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    vetMembershipsList.innerHTML = `<div class="empty-state"><p>Error cargando membresías: ${escapeHtml(err.message)}</p></div>`;
+  }
+}
+
+if (btnRefreshMemberships) {
+  btnRefreshMemberships.addEventListener('click', () => {
+    loadVetMembershipsList();
+    showToast('Suscriptores de Membresía Cuidado Continuo actualizados.', 'info');
+  });
 }
 
 // ========================================================
