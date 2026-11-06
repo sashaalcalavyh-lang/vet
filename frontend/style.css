@@ -5325,6 +5325,151 @@ body.theme-light .mode-btn.active {
   transform: scale(1.1) rotate(-3deg);
 }
 
+/* ======================================================== */
+/* 5. ZERO-FRICTION CHECKOUT (BRAIN DE JELOU / MERCADO PAGO)*/
+/* ======================================================== */
+.zero-friction-checkout-box {
+  background: #fafafa;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.zf-checkout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
+}
+
+.zf-badge-instant {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--daniela-magenta-dark);
+  background: #fdf2f8;
+  border: 1px solid rgba(233, 30, 99, 0.22);
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+}
+
+.zf-secure-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.zf-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 165px), 1fr));
+  gap: 0.55rem;
+}
+
+.zf-method-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1.5px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  transition: all 160ms cubic-bezier(0.22, 1, 0.36, 1);
+  min-width: 0;
+}
+
+.zf-method-card:hover {
+  border-color: rgba(233, 30, 99, 0.4);
+  transform: translateY(-1px);
+}
+
+.zf-method-card.active {
+  border-color: var(--daniela-magenta);
+  background: #fdf2f8;
+  box-shadow: 0 2px 10px rgba(233, 30, 99, 0.12);
+}
+
+.zf-method-icon {
+  font-size: 1.15rem;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.zf-method-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.zf-method-copy strong {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.zf-method-copy small {
+  font-size: 0.71rem;
+  color: #64748b;
+  line-height: 1.25;
+}
+
+.zf-inline-card-drawer {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed rgba(15, 23, 42, 0.12);
+}
+
+.zf-card-inputs-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+  .zf-card-inputs-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.zf-card-hint {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.btn-zf-whatsapp-flow {
+  width: 100%;
+  margin-top: 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.78rem 1.1rem;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #065f46;
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition: all 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-zf-whatsapp-flow:hover {
+  background: #d1fae5;
+  border-color: #10b981;
+  transform: translateY(-1px);
+}
+
+
 
 
 

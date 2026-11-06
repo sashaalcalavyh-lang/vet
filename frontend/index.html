@@ -449,18 +449,62 @@
             </div>
           </div>
 
+          <!-- CHECKOUT EXPRESS CERO FRICCIÓN (ESTILO BRAIN DE JELOU / MERCADO PAGO IN-APP) -->
+          <div class="zero-friction-checkout-box" id="hold-zero-friction-box">
+            <div class="zf-checkout-header">
+              <span class="zf-badge-instant">⚡ PAGO SIN REDIRECCIÓN · CERO REGISTRO</span>
+              <span class="zf-secure-tag">🔒 Mercado Pago · Stripe · Jelou Brain</span>
+            </div>
+
+            <div class="zf-methods-grid" role="radiogroup" aria-label="Método de pago sin fricción">
+              <button type="button" class="zf-method-card active" data-zf-target="hold" data-zf-method="WHATSAPP_FLOW">
+                <span class="zf-method-icon">💬</span>
+                <div class="zf-method-copy">
+                  <strong>WhatsApp Flow Directo</strong>
+                  <small>Paga dentro de tu chat sin abrir links</small>
+                </div>
+              </button>
+              <button type="button" class="zf-method-card" data-zf-target="hold" data-zf-method="CARD_INLINE">
+                <span class="zf-method-icon">💳</span>
+                <div class="zf-method-copy">
+                  <strong>Tarjeta 1-Toque Aquí</strong>
+                  <small>Débito / Crédito sin crear cuenta</small>
+                </div>
+              </button>
+              <button type="button" class="zf-method-card" data-zf-target="hold" data-zf-method="MERCADOPAGO_ONECLICK">
+                <span class="zf-method-icon">🤝</span>
+                <div class="zf-method-copy">
+                  <strong>Mercado Pago / Khipu</strong>
+                  <small>Aprobación instantánea en pantalla</small>
+                </div>
+              </button>
+            </div>
+
+            <!-- Campos Inline de Tarjeta (Solo visibles si elige CARD_INLINE, sin salir de la app) -->
+            <div class="zf-inline-card-drawer hidden" id="zf-inline-card-hold">
+              <div class="zf-card-inputs-row">
+                <input type="text" class="clinical-input font-mono zf-input-num" placeholder="4532 •••• •••• 8890" maxlength="19" aria-label="Número de tarjeta">
+                <input type="text" class="clinical-input font-mono zf-input-exp" placeholder="MM/AA" maxlength="5" aria-label="Vencimiento">
+                <input type="password" class="clinical-input font-mono zf-input-cvv" placeholder="CVV" maxlength="4" aria-label="Código de seguridad">
+              </div>
+              <small class="zf-card-hint">🛡️ Tokenizado en vivo sin redirección externa ni creación de contraseña.</small>
+            </div>
+          </div>
+
           <div class="hold-actions-box">
-            <button class="btn-covet-confirm" id="btn-covet-confirm">
-              <span class="pay-icon">💳</span>
-              <span id="btn-confirm-pay-text">Pagar y Confirmar Cupo ($25.000 CLP)</span>
+            <button class="btn-covet-confirm rare-btn-sheen" id="btn-covet-confirm">
+              <span class="pay-icon">⚡</span>
+              <span id="btn-confirm-pay-text">Confirmar y Pagar Ahora Sin Salir ($25.000 CLP)</span>
             </button>
+            <a href="#" target="_blank" class="btn-zf-whatsapp-flow" id="btn-hold-whatsapp-flow">
+              <span>📲</span> Continuar Pago Nativo dentro de mi WhatsApp (Brain Flow)
+            </a>
             <div class="external-pay-link-wrap hidden" id="external-pay-link-wrap">
               <a href="#" target="_blank" class="btn-external-pay" id="btn-external-pay">
                 Abrir Pasarela de Pago Oficial (MercadoPago / Webpay) ↗
               </a>
             </div>
-            <p class="pay-note">Simulación 1-Clic para Demos de Venta: confirma la reserva en PostgreSQL y notifica de
-              inmediato al veterinario.</p>
+            <p class="pay-note">Checkout sin fricción: confirma tu cupo al instante en PostgreSQL, desbloquea primeros auxilios y notifica a la Dra. Daniela Alcázar.</p>
           </div>
         </div>
       </div>
@@ -1725,6 +1769,45 @@
                   mes</span></div>
               <small>✓ Incluye Vacuna Óctuple/Triple + Antirrábica anual, 1 Consulta a Domicilio Gratis/año, 20% dcto.
                 en consultas extra, Historial 24/7 y Recordatorios Automáticos.</small>
+            </div>
+
+            <!-- Selector de Pago Sin Fricción (Estilo Brain de Jelou / Mercado Pago In-App) -->
+            <div class="zero-friction-checkout-box" style="margin-top: 0.75rem;">
+              <div class="zf-checkout-header">
+                <span class="zf-badge-instant">⚡ ACTIVACIÓN SIN REDIRECCIÓN EXTERNA</span>
+                <span class="zf-secure-tag">Sin crear cuenta ni claves</span>
+              </div>
+              <input type="hidden" id="sub-metodo-pago" value="WHATSAPP_FLOW">
+              <div class="zf-methods-grid" role="radiogroup" aria-label="Método de suscripción sin fricción">
+                <button type="button" class="zf-method-card active" data-zf-target="sub" data-zf-method="WHATSAPP_FLOW">
+                  <span class="zf-method-icon">💬</span>
+                  <div class="zf-method-copy">
+                    <strong>Pago en WhatsApp</strong>
+                    <small>Directo en el chat sin links</small>
+                  </div>
+                </button>
+                <button type="button" class="zf-method-card" data-zf-target="sub" data-zf-method="CARD_INLINE">
+                  <span class="zf-method-icon">💳</span>
+                  <div class="zf-method-copy">
+                    <strong>Tarjeta Directa</strong>
+                    <small>Débito / Crédito aquí mismo</small>
+                  </div>
+                </button>
+                <button type="button" class="zf-method-card" data-zf-target="sub" data-zf-method="MERCADOPAGO_ONECLICK">
+                  <span class="zf-method-icon">🤝</span>
+                  <div class="zf-method-copy">
+                    <strong>Mercado Pago 1-Clic</strong>
+                    <small>Suscripción automática PAC</small>
+                  </div>
+                </button>
+              </div>
+              <div class="zf-inline-card-drawer hidden" id="zf-inline-card-sub">
+                <div class="zf-card-inputs-row">
+                  <input type="text" class="clinical-input font-mono zf-input-num" placeholder="4532 •••• •••• 8890" maxlength="19" aria-label="Número de tarjeta">
+                  <input type="text" class="clinical-input font-mono zf-input-exp" placeholder="MM/AA" maxlength="5" aria-label="Vencimiento">
+                  <input type="password" class="clinical-input font-mono zf-input-cvv" placeholder="CVV" maxlength="4" aria-label="CVV">
+                </div>
+              </div>
             </div>
 
             <label class="privacy-checkbox-label" for="sub-consent-ley21719" style="margin-top: 0.75rem;">

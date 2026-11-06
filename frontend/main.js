@@ -974,7 +974,21 @@ function renderHoldStage(result, payload) {
   const finalAmount = result.monto_clp || selectedPrecio;
   const formattedPrice = `$${Number(finalAmount).toLocaleString('es-CL')} CLP`;
   holdSummaryPrice.textContent = formattedPrice;
-  btnConfirmPayText.textContent = `Pagar y Confirmar Cupo (${formattedPrice})`;
+  btnConfirmPayText.textContent = `Confirmar y Pagar Ahora Sin Salir (${formattedPrice})`;
+
+  // 2.5 Botón de Pago Nativo dentro de WhatsApp (Brain Flow / Cero Fricción)
+  const btnHoldWaFlow = document.getElementById('btn-hold-whatsapp-flow');
+  if (btnHoldWaFlow) {
+    const waFlowMsg =
+      `⚡ *CoVet — Pago Nativo en Chat (Sin Links Externos)*\n\n` +
+      `Hola Dra. Daniela, quiero confirmar y pagar aquí en el chat mi reserva *#${result.cita_id || activeTriageCitaId}*:\n` +
+      `• *Paciente:* ${payload.paciente_nombre} (${payload.especie})\n` +
+      `• *Tutor(a):* ${payload.tutor_nombre} (${payload.tutor_telefono})\n` +
+      `• *Modalidad:* ${payload.modalidad}\n` +
+      `• *Bloque:* ${payload.seleccion_horaria}\n` +
+      `• *Monto:* ${formattedPrice}`;
+    btnHoldWaFlow.href = `https://wa.me/56994128890?text=${encodeURIComponent(waFlowMsg)}`;
+  }
 
   // 3. Link de Pago Externo (si fue configurado)
   if (result.payment_link) {
@@ -3272,6 +3286,7 @@ if (formSubscribeMembership) {
         especie: document.getElementById('sub-paciente-especie').value,
         raza: document.getElementById('sub-paciente-raza').value.trim() || 'Mestizo',
         clinica_slug: activeVetSlug || 'dra-daniela-alcazar',
+        metodo_pago: document.getElementById('sub-metodo-pago')?.value || 'WHATSAPP_FLOW',
         consentimiento_ley21719: document.getElementById('sub-consent-ley21719').checked
       };
 
@@ -3650,6 +3665,27 @@ document.querySelectorAll('.rare-card').forEach(card => {
     card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
   });
 });
+
+// Selector de Métodos de Pago Sin Fricción (Brain de Jelou / In-App Checkout)
+document.querySelectorAll('.zf-method-card').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.getAttribute('data-zf-target');
+    const method = btn.getAttribute('data-zf-method');
+    document.querySelectorAll(`.zf-method-card[data-zf-target="${target}"]`).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    if (target === 'sub') {
+      const hiddenInput = document.getElementById('sub-metodo-pago');
+      if (hiddenInput) hiddenInput.value = method;
+      const drawerSub = document.getElementById('zf-inline-card-sub');
+      if (drawerSub) drawerSub.classList.toggle('hidden', method !== 'CARD_INLINE');
+    } else if (target === 'hold') {
+      const drawerHold = document.getElementById('zf-inline-card-hold');
+      if (drawerHold) drawerHold.classList.toggle('hidden', method !== 'CARD_INLINE');
+    }
+  });
+});
+
 
 
 

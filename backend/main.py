@@ -4207,6 +4207,7 @@ class MembresiaSuscribirRequest(BaseModel):
     raza: Optional[str] = Field(default="Mestizo", max_length=60, example="Poodle")
     peso_kg: Optional[float] = Field(default=0.0, example=7.5)
     clinica_slug: Optional[str] = Field(default="dra-daniela-alcazar", max_length=60)
+    metodo_pago: Optional[str] = Field(default="WHATSAPP_FLOW", max_length=50)
     consentimiento_ley21719: bool = Field(default=True)
 
 
@@ -4420,7 +4421,8 @@ def suscribir_membresia_cuidado_continuo(
         "calendario_preventivo": {
             "proxima_vacuna": membresia.proxima_vacuna_fecha,
             "proxima_desparasitacion": membresia.proxima_desparasitacion_fecha
-        }
+        },
+        "metodo_pago": req.metodo_pago or "WHATSAPP_FLOW"
     }
 
 
@@ -4495,5 +4497,103 @@ def listar_membresias_y_carnet_vivo(
         })
 
     return result
+
+
+class JelouMercadoPagoWebhookPayload(BaseModel):
+    """Payload universal para webhooks de pago in-chat de Brain de Jelou y Mercado Pago Chile."""
+    provider: Optional[str] = Field(default="JELOU_BRAIN_WHATSAPP")
+    status: Optional[str] = Field(default="approved")
+    transaction_type: Optional[str] = Field(default=None, description="APPOINTMENT o MEMBERSHIP")
+    cita_id: Optional[int] = Field(default=None)
+    external_reference: Optional[str] = Field(default=None)
+    monto_clp: Optional[int] = Field(default=8990)
+    tutor_nombre: Optional[str] = Field(default="Tutor WhatsApp Flow")
+    tutor_telefono: Optional[str] = Field(default="+56994128890")
+    tutor_direccion: Optional[str] = Field(default=None)
+    paciente_nombre: Optional[str] = Field(default="Mascota")
+    especie: Optional[str] = Field(default="Canino")
+    clinica_slug: Optional[str] = Field(default="dra-daniela-alcazar")
+
+
+@app.post("/api/v1/covet/webhooks/jelou-mercadopago")
+def webhook_jelou_brain_mercadopago(
+    payload: JelouMercadoPagoWebhookPayload,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db)
+):
+    """
+    Webhook Transaccional Zero-Friction para Brain de Jelou (WhatsApp Flows) y Mercado Pago Chile:
+    - Si incluye `cita_id` (o `external_reference` numérico), confirma la cita en PostgreSQL (`CONFIRMED`),
+      desbloquea el protocolo de primeros auxilios y notifica por SSE + n8n.
+    - Si es una suscripción de $8.990 (`MEMBERSHIP`), activa la Membresía Cuidado Continuo en PostgreSQL
+      y despacha el comprobante y carné 24/7 por WhatsApp/n8n.
+    """
+    ahora = datetime.datetime.utcnow()
+
+    # Caso 1: Confirmación de Cita Agendada (Domicilio $25.000 / Telemedicina $15.000)
+    target_cita_id = payload.cita_id
+    if not target_cita_id and payload.external_reference and str(payload.external_reference).isdigit():
+        target_cita_id = int(payload.external_reference)
+
+    if target_cita_id:
+        cita = db.query(CitaDB).filter(CitaDB.id == target_cita_id).first()
+        if not cita:
+            raise HTTPException(status_code=404, detail=f"Cita #{target_cita_id} no encontrada.")
+        cita.estado_reserva = "CONFIRMED"
+        cita.pagado = True
+        db.commit()
+        db.refresh(cita)
+
+        seq = broadcast_clinical_event(
+            "APPOINTMENT_PAID_JELOU",
+            {
+                "cita_id": cita.id,
+                "provider": payload.provider,
+                "monto_clp": cita.monto_clp or payload.monto_clp,
+                "estado_reserva": "CONFIRMED"
+            }
+        )
+        background_tasks.add_task(
+            trigger_n8n_triage_alert,
+            {
+                "event_type": "TRIAGE_CONFIRMED",
+                "cita_id": cita.id,
+                "provider": payload.provider,
+                "tutor_nombre": payload.tutor_nombre,
+                "tutor_telefono": normalizar_telefono_cl(payload.tutor_telefono),
+                "paciente_nombre": payload.paciente_nombre,
+                "especie": payload.especie,
+                "modalidad": cita.modalidad or "DOMICILIO",
+                "ventana_horaria": cita.ventana_horaria or "Confirmada en WhatsApp"
+            }
+        )
+        return {
+            "status": "APPOINTMENT_CONFIRMED_IN_CHAT",
+            "seq": seq,
+            "cita_id": cita.id,
+            "provider": payload.provider,
+            "pagado": True
+        }
+
+    # Caso 2: Activación directa de Membresía Cuidado Continuo ($8.990/mes) desde WhatsApp Flow
+    sub_req = MembresiaSuscribirRequest(
+        tutor_nombre=payload.tutor_nombre or "Tutor WhatsApp Flow",
+        tutor_telefono=payload.tutor_telefono or "+56994128890",
+        tutor_direccion=payload.tutor_direccion,
+        paciente_nombre=payload.paciente_nombre or "Mascota",
+        especie=payload.especie or "Canino",
+        clinica_slug=payload.clinica_slug or "dra-daniela-alcazar",
+        metodo_pago=payload.provider or "JELOU_BRAIN_WHATSAPP",
+        consentimiento_ley21719=True
+    )
+    res_sub = suscribir_membresia_cuidado_continuo(sub_req, background_tasks, db)
+    return {
+        "status": "MEMBERSHIP_ACTIVATED_IN_CHAT",
+        "provider": payload.provider,
+        "folio_membresia": res_sub["folio_membresia"],
+        "paciente": res_sub["paciente"],
+        "calendario_preventivo": res_sub["calendario_preventivo"]
+    }
+
 
 
