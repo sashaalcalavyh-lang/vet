@@ -323,8 +323,8 @@ class MembresiaSuscripcionDB(Base):
     meses_acumulados = Column(Integer, default=1)
     consulta_domicilio_gratis_usada = Column(Boolean, default=False)
     vacuna_anual_aplicada = Column(Boolean, default=False)
-    proxima_vacuna_fecha = Column(String(40), nullable=True)
-    proxima_desparasitacion_fecha = Column(String(40), nullable=True)
+    proxima_vacuna_fecha = Column(String(120), nullable=True)
+    proxima_desparasitacion_fecha = Column(String(120), nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 def run_safe_migrations(engine_instance):
@@ -422,11 +422,13 @@ def run_safe_migrations(engine_instance):
                     meses_acumulados INT DEFAULT 1,
                     consulta_domicilio_gratis_usada BOOLEAN DEFAULT FALSE,
                     vacuna_anual_aplicada BOOLEAN DEFAULT FALSE,
-                    proxima_vacuna_fecha VARCHAR(40),
-                    proxima_desparasitacion_fecha VARCHAR(40),
+                    proxima_vacuna_fecha VARCHAR(120),
+                    proxima_desparasitacion_fecha VARCHAR(120),
                     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
                 );
             """))
+            conn.execute(text("ALTER TABLE membresias_suscripcion ALTER COLUMN proxima_vacuna_fecha TYPE VARCHAR(120);"))
+            conn.execute(text("ALTER TABLE membresias_suscripcion ALTER COLUMN proxima_desparasitacion_fecha TYPE VARCHAR(120);"))
 
             # Función segura para supresión en cascada atómica (Ley 21.719: Tutores + Fichas + Citas)
             conn.execute(text("""
