@@ -5439,10 +5439,12 @@ def handle_meta_whatsapp_webhook(
                     paciente_id=paciente.id,
                     fecha_hora=ahora + datetime.timedelta(hours=2),
                     motivo=motivo,
-                    estado="PROGRAMADA",
+                    confirmada=False,
+                    estado_cita="HOLD_15_MIN",
                     estado_reserva="HOLD_15_MIN",
                     nivel_urgencia=ctx.get("triage_urgency", "LOW"),
                     modalidad=modalidad,
+                    tipo_atencion=modalidad,
                     ventana_horaria=slot_label,
                     hold_expires_at=ahora + datetime.timedelta(minutes=15),
                     pagado=False,
@@ -5521,7 +5523,11 @@ def handle_meta_whatsapp_webhook(
 
                 if cita:
                     cita.estado_reserva = "CONFIRMED"
+                    cita.estado_cita = "CONFIRMED"
+                    cita.confirmada = True
                     cita.pagado = True
+                    cita.pago_estado = "PAID_GATEWAY"
+                    cita.pago_metodo = "WHATSAPP_INCHAT_NATIVE"
                     db.commit()
                     db.refresh(cita)
 
