@@ -72,7 +72,7 @@
       </div>
 
       <!-- HERO SECTION DE CONFIANZA — DRA. DANIELA ALCÁZAR -->
-      <div class="daniela-hero-banner glass-panel" id="daniela-hero-section">
+      <div class="daniela-hero-banner glass-panel rare-card stagger-item stagger-1" id="daniela-hero-section">
         <div class="daniela-hero-pills-row">
           <span class="daniela-pill-magenta"><span class="pill-dot-indicator"></span>Medicina Veterinaria Preventiva, Domicilio & Telemedicina</span>
           <span class="daniela-pill-purple">Sin Estrés de Traslado</span>
@@ -88,7 +88,7 @@
         </p>
 
         <div class="daniela-hero-cta-row">
-          <a href="#daniela-pricing-section" class="btn-daniela-primary-cta">
+          <a href="#daniela-pricing-section" class="btn-daniela-primary-cta rare-btn-sheen">
             <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               <path d="m9 12 2 2 4-4"/>
@@ -123,8 +123,8 @@
       </div>
 
       <!-- SECCIÓN DE SUSCRIPCIÓN: TARJETA DE PRECIO DESTACADA (PRICING CARD) -->
-      <div class="daniela-pricing-section" id="daniela-pricing-section">
-        <div class="daniela-pricing-card glass-panel">
+      <div class="daniela-pricing-section stagger-item stagger-2" id="daniela-pricing-section">
+        <div class="daniela-pricing-card glass-panel rare-card">
           <div class="pricing-card-top-row">
             <div class="pricing-card-ribbon">
               <span class="ribbon-dot"></span>
@@ -205,7 +205,7 @@
 
           <!-- Botón de Call to Action Atractivo -->
           <div class="pricing-cta-box">
-            <button type="button" class="btn-subscribe-pet" id="btn-open-subscribe-modal">
+            <button type="button" class="btn-subscribe-pet rare-btn-sheen" id="btn-open-subscribe-modal">
               <span>Suscribir a mi mascota</span>
               <span class="cta-arrow" aria-hidden="true">→</span>
             </button>
@@ -217,8 +217,8 @@
       </div>
 
       <!-- ESTADO 1: LIENZO MINIMALISTA DE INTENCIÓN (TRIAJE CLÍNICO CON IA COVET) -->
-      <div class="client-intent-hero" id="client-intent-hero">
-        <div class="glass-panel client-canvas-card">
+      <div class="client-intent-hero stagger-item stagger-3" id="client-intent-hero">
+        <div class="glass-panel client-canvas-card rare-card">
           <div class="client-canvas-header">
             <span class="daniela-pill-magenta" style="margin-bottom: 0.65rem; display: inline-flex;"><span class="pill-dot-indicator"></span>Asistente
               Clínico de Triaje · Agenda a Domicilio & Telemedicina</span>
@@ -275,14 +275,31 @@
         </div>
       </div>
 
-      <!-- ESTADO 2: ANIMACIÓN DE EVALUACIÓN BIO INDIGO -->
-      <div class="client-evaluating-card glass-panel hidden" id="client-evaluating-card">
-        <div class="bio-radar-spinner">
-          <div class="radar-dot"></div>
+      <!-- ESTADO 2: SKELETON SHIMMER DE EVALUACIÓN CLÍNICA (RARE UI LOADING STATE) -->
+      <div class="client-evaluating-card glass-panel rare-card hidden" id="client-evaluating-card" aria-busy="true">
+        <div class="rare-eval-header">
+          <div class="bio-radar-spinner">
+            <div class="radar-dot"></div>
+          </div>
+          <div>
+            <h3 class="evaluating-title">Agente Clínico estructurando tu atención...</h3>
+            <p class="evaluating-sub">Analizando síntomas, seleccionando protocolo preventivo y consultando bloques de Domicilio y Telemedicina.</p>
+          </div>
         </div>
-        <h3 class="evaluating-title">Agente CoVet evaluando síntomas y disponibilidad...</h3>
-        <p class="evaluating-sub">Clasificando urgencia vital con IA, asignando protocolo de primeros auxilios y
-          consultando agenda en tiempo real.</p>
+        <div class="skeleton-stack" aria-hidden="true">
+          <div class="skeleton-card-preview">
+            <div class="skeleton-row-between">
+              <span class="skeleton-pill shimmer-bar" style="width: 140px; height: 22px;"></span>
+              <span class="skeleton-pill shimmer-bar" style="width: 90px; height: 22px;"></span>
+            </div>
+            <div class="shimmer-bar" style="width: 68%; height: 20px; margin-top: 10px;"></div>
+            <div class="shimmer-bar" style="width: 92%; height: 14px; margin-top: 8px;"></div>
+          </div>
+          <div class="skeleton-grid-2">
+            <div class="skeleton-slot-box shimmer-bar"></div>
+            <div class="skeleton-slot-box shimmer-bar"></div>
+          </div>
+        </div>
       </div>
 
       <!-- ESTADO 3: TRANSFORMACIÓN DINÁMICA (TRIAJE, PREGUNTAS Y AGENDA HÍBRIDA) -->
@@ -1078,9 +1095,9 @@
               </div>
 
               <div class="appointments-container" id="appointments-list">
-                <div class="loading-state">
-                  <span class="spinner"></span>
-                  <p>Cargando citas...</p>
+                <div class="skeleton-stack" aria-busy="true" aria-label="Cargando citas">
+                  <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 45%; height: 16px;"></div><div class="shimmer-bar" style="width: 82%; height: 12px; margin-top: 8px;"></div></div>
+                  <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 55%; height: 16px;"></div><div class="shimmer-bar" style="width: 74%; height: 12px; margin-top: 8px;"></div></div>
                 </div>
               </div>
             </section>
@@ -1100,9 +1117,8 @@
               </button>
             </div>
             <div class="appointments-container" id="vet-memberships-list">
-              <div class="loading-state">
-                <span class="spinner"></span>
-                <p>Cargando suscriptores activos...</p>
+              <div class="skeleton-stack" aria-busy="true" aria-label="Cargando suscriptores activos">
+                <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 50%; height: 16px;"></div><div class="shimmer-bar" style="width: 88%; height: 12px; margin-top: 8px;"></div></div>
               </div>
             </div>
           </section>
@@ -1138,9 +1154,9 @@
             </div>
 
             <div class="fiches-list-container" id="fiches-history-list">
-              <div class="loading-state">
-                <span class="spinner"></span>
-                <p>Cargando historial de fichas...</p>
+              <div class="skeleton-stack" aria-busy="true" aria-label="Cargando historial de fichas">
+                <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 42%; height: 18px;"></div><div class="shimmer-bar" style="width: 90%; height: 12px; margin-top: 10px;"></div><div class="shimmer-bar" style="width: 65%; height: 12px; margin-top: 6px;"></div></div>
+                <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 48%; height: 18px;"></div><div class="shimmer-bar" style="width: 85%; height: 12px; margin-top: 10px;"></div><div class="shimmer-bar" style="width: 60%; height: 12px; margin-top: 6px;"></div></div>
               </div>
             </div>
           </div>

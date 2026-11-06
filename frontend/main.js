@@ -1991,8 +1991,16 @@ function renderAppointmentsList(citas, pacientes) {
 
   if (!citas || citas.length === 0) {
     appointmentsContainer.innerHTML = `
-      <div class="empty-state">
-        <p>No hay citas programadas aún.</p>
+      <div class="rare-empty-state" role="status">
+        <div class="rare-empty-icon-box">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </div>
+        <h4 class="rare-empty-title">Sin citas programadas por ahora</h4>
+        <p class="rare-empty-desc">Cuando un tutor agende una visita a domicilio o telemedicina desde el Triaje IA, o registres un control en el formulario lateral, aparecerá aquí en tiempo real.</p>
+        <button type="button" class="rare-empty-cta" onclick="document.getElementById('cita-tutor-nombre')?.focus()">
+          <span>+ Agendar primera cita manual</span>
+          <span aria-hidden="true">→</span>
+        </button>
       </div>
     `;
     return;
@@ -2281,9 +2289,9 @@ async function loadFichesHistory() {
   if (!fichesHistoryList) return;
 
   fichesHistoryList.innerHTML = `
-    <div class="loading-state">
-      <span class="spinner"></span>
-      <p>Consultando fichas en PostgreSQL...</p>
+    <div class="skeleton-stack" aria-busy="true" aria-label="Consultando fichas en PostgreSQL">
+      <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 42%; height: 18px;"></div><div class="shimmer-bar" style="width: 90%; height: 12px; margin-top: 10px;"></div><div class="shimmer-bar" style="width: 65%; height: 12px; margin-top: 6px;"></div></div>
+      <div class="skeleton-list-item"><div class="shimmer-bar" style="width: 48%; height: 18px;"></div><div class="shimmer-bar" style="width: 85%; height: 12px; margin-top: 10px;"></div><div class="shimmer-bar" style="width: 60%; height: 12px; margin-top: 6px;"></div></div>
     </div>
   `;
 
@@ -2294,7 +2302,19 @@ async function loadFichesHistory() {
     cachedFichesHistory = Array.isArray(fiches) ? fiches : [];
 
     if (!fiches || fiches.length === 0) {
-      fichesHistoryList.innerHTML = `<div class="empty-state"><p>No hay fichas clínicas registradas aún.</p></div>`;
+      fichesHistoryList.innerHTML = `
+        <div class="rare-empty-state" role="status">
+          <div class="rare-empty-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h4 class="rare-empty-title">Aún no hay fichas clínicas SOAP registradas</h4>
+          <p class="rare-empty-desc">Graba o redacta tu primera consulta en la pestaña de Dictado Clínico para generar automáticamente la ficha SOAP y la receta médica en PDF.</p>
+          <button type="button" class="rare-empty-cta" onclick="document.querySelector('[data-tab=&quot;tab-dictation&quot;]')?.click()">
+            <span>Ir a Dictado Clínico SOAP</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      `;
       return;
     }
 
@@ -3414,7 +3434,19 @@ async function loadVetMembershipsList() {
     const list = await res.json();
 
     if (!Array.isArray(list) || list.length === 0) {
-      vetMembershipsList.innerHTML = `<div class="empty-state"><p>Aún no hay mascotas inscritas en la Membresía Cuidado Continuo.</p></div>`;
+      vetMembershipsList.innerHTML = `
+        <div class="rare-empty-state" role="status">
+          <div class="rare-empty-icon-box">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+          </div>
+          <h4 class="rare-empty-title">Sin mascotas inscritas aún en la Membresía</h4>
+          <p class="rare-empty-desc">Aquí aparecerán las mascotas suscritas al plan Cuidado Continuo ($8.990/mes) con sus fechas automáticas de vacunación anual y desparasitación.</p>
+          <button type="button" class="rare-empty-cta" onclick="document.getElementById('modal-subscribe-membership')?.classList.remove('hidden')">
+            <span>+ Inscribir mascota manualmente</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+      `;
       return;
     }
 
@@ -3609,6 +3641,16 @@ updateOfflineBanner();
 if (isSunModeActive) {
   setSunMode(true);
 }
+
+// Rare UI Interactive Spotlight Card Effect
+document.querySelectorAll('.rare-card').forEach(card => {
+  card.addEventListener('pointermove', (e) => {
+    const rect = card.getBoundingClientRect();
+    card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+    card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+  });
+});
+
 
 
 

@@ -5101,6 +5101,231 @@ body.theme-light .mode-btn.active {
   gap: 0.25rem;
 }
 
+/* ======================================================== */
+/* RARE UI + MICRO-INTERACCIONES PRO (SKELETON, EMPTY, HOVER)*/
+/* ======================================================== */
+
+/* 1. Animación de Entrada Escalonada (Staggered Reveal) */
+@keyframes rareStaggerFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stagger-item {
+  animation: rareStaggerFadeUp 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.stagger-1 { animation-delay: 40ms; }
+.stagger-2 { animation-delay: 110ms; }
+.stagger-3 { animation-delay: 180ms; }
+
+/* 2. Skeleton Shimmer Loaders */
+@keyframes rareShimmerSweep {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.skeleton-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.skeleton-list-item,
+.skeleton-card-preview {
+  padding: 0.95rem 1.1rem;
+  border-radius: 12px;
+  background: #fafafa;
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  text-align: left;
+}
+
+.skeleton-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.skeleton-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 0.75rem;
+}
+
+.skeleton-slot-box {
+  height: 64px;
+  border-radius: 12px;
+}
+
+.shimmer-bar {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(226, 232, 240, 0.65) 25%,
+    rgba(241, 245, 249, 0.95) 50%,
+    rgba(226, 232, 240, 0.65) 75%
+  );
+  background-size: 200% 100%;
+  animation: rareShimmerSweep 1.6s ease-in-out infinite;
+}
+
+.rare-eval-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.15rem;
+  text-align: left;
+}
+
+/* 3. Estados Vacíos Interactivos (Rare Empty States) */
+.rare-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2.25rem 1.25rem;
+  background: #fafafa;
+  border: 1px dashed rgba(15, 23, 42, 0.14);
+  border-radius: 14px;
+  gap: 0.5rem;
+}
+
+.rare-empty-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #fdf2f8;
+  border: 1px solid rgba(233, 30, 99, 0.2);
+  color: var(--daniela-magenta);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.35rem;
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.1);
+}
+
+.rare-empty-title {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+}
+
+.rare-empty-desc {
+  font-size: 0.83rem;
+  color: #64748b;
+  max-width: 420px;
+  line-height: 1.5;
+  margin: 0 0 0.6rem 0;
+}
+
+.rare-empty-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.58rem 1rem;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid rgba(233, 30, 99, 0.3);
+  color: var(--daniela-magenta-dark);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition: all 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rare-empty-cta:hover {
+  background: #fdf2f8;
+  border-color: var(--daniela-magenta);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.14);
+}
+
+/* 4. Rare UI Spotlight Cards & Button Sheen Micro-Interactions */
+.rare-card {
+  position: relative;
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 220ms cubic-bezier(0.22, 1, 0.36, 1), border-color 220ms ease;
+}
+
+.rare-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    520px circle at var(--mouse-x, 50%) var(--mouse-y, 0%),
+    rgba(233, 30, 99, 0.045),
+    transparent 45%
+  );
+  opacity: 0;
+  transition: opacity 250ms ease;
+  pointer-events: none;
+}
+
+.rare-card:hover::before {
+  opacity: 1;
+}
+
+.rare-btn-sheen {
+  position: relative;
+  overflow: hidden;
+}
+
+.rare-btn-sheen::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 65%;
+  height: 100%;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.26) 50%,
+    transparent 80%
+  );
+  transition: left 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.rare-btn-sheen:hover::after {
+  left: 140%;
+}
+
+/* Feedback táctil en botones e interactivos */
+.btn-daniela-primary-cta:active,
+.btn-daniela-secondary-cta:active,
+.btn-subscribe-pet:active,
+.intent-chip:active,
+.rare-empty-cta:active {
+  transform: scale(0.985) !important;
+}
+
+.btn-daniela-primary-cta svg,
+.btn-daniela-secondary-cta svg {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.btn-daniela-primary-cta:hover svg,
+.btn-daniela-secondary-cta:hover svg {
+  transform: scale(1.1) rotate(-3deg);
+}
+
+
 
 
 
