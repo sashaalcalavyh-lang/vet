@@ -12,11 +12,13 @@ import random
 import shutil
 import datetime
 import logging
+import socket
 import threading
 import json
 import gzip
 import subprocess
 import asyncio
+from urllib.parse import urlparse
 from typing import List, Optional, Any, Dict, Union, Tuple
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Header, Request, Query
 from fastapi.concurrency import run_in_threadpool
@@ -140,13 +142,19 @@ def llm_post(url: str, *, timeout: float, max_attempts: int = 4, **kwargs: Any) 
 
 
 def require_admin(x_admin_key: Optional[str] = Header(None)) -> None:
-    """Protege endpoints SuperAdmin con la cabecera X-Admin-Key (falla cerrado si no hay clave)."""
-    expected = os.getenv("COVET_ADMIN_KEY", "")
-    master_key = "CoVetSuperAdminKeySasha2026Secure!"
+    """Protege endpoints administrativos con X-Admin-Key validada contra ADMIN_API_KEY / COVET_ADMIN_KEY."""
+    admin_key = os.getenv("ADMIN_API_KEY", "").strip()
+    covet_key = os.getenv("COVET_ADMIN_KEY", "").strip()
+    allowed_keys = [k for k in (admin_key, covet_key) if k]
+    if not allowed_keys:
+        logger.critical("[AdminAuth] ADMIN_API_KEY y COVET_ADMIN_KEY no están configuradas en el entorno.")
+        raise HTTPException(
+            status_code=503,
+            detail="Autenticación administrativa no configurada en el servidor."
+        )
     if not x_admin_key:
         raise HTTPException(status_code=401, detail="Credencial administrativa requerida (X-Admin-Key).")
-    is_valid = (expected and hmac.compare_digest(x_admin_key, expected)) or hmac.compare_digest(x_admin_key, master_key)
-    if not is_valid:
+    if not any(hmac.compare_digest(x_admin_key, expected) for expected in allowed_keys):
         raise HTTPException(status_code=401, detail="Credencial administrativa inválida.")
 
 
@@ -1327,8 +1335,111 @@ def root():
         "version": "2.0.0"
     }
 
+HEALTH_CACHE_TTL_SECONDS = 30
+_health_cache_lock = threading.Lock()
+_health_cache: Dict[str, Any] = {"expires_at": 0.0, "services": None}
+
+
+def _get_active_whatsapp_credentials() -> Tuple[str, str]:
+    """Obtiene phone_number_id y token de WhatsApp Cloud API desde variables de entorno, ignorando placeholders."""
+    phone_id = os.getenv("WHATSAPP_PHONE_NUMBER_ID", "").strip()
+    token = ""
+    for var_name in ("WHATSAPP_ACCESS_TOKEN", "WHATSAPP_TOKEN"):
+        candidate = os.getenv(var_name, "").strip()
+        if candidate and candidate != "your_token_here":
+            token = candidate
+            break
+    return phone_id, token
+
+
+def _check_http_api_key(url: str, headers: Dict[str, str], missing: bool) -> str:
+    """Verifica conectividad y validez de credenciales contra un endpoint HTTP externo."""
+    if missing:
+        return "missing_key"
+    try:
+        with httpx.Client(timeout=4.0) as client:
+            resp = client.get(url, headers=headers)
+        if resp.status_code == 200:
+            return "connected"
+        if resp.status_code in (401, 403):
+            return "invalid_key"
+        return f"http_{resp.status_code}"
+    except Exception as exc:
+        return f"unreachable: {type(exc).__name__}"
+
+
+def _check_whatsapp_health() -> str:
+    """Verifica en Meta Graph API que el phone_number_id y token de WhatsApp estén activos."""
+    phone_id, token = _get_active_whatsapp_credentials()
+    if not phone_id or not token:
+        return "missing_credentials"
+    graph_ver = os.getenv("WHATSAPP_GRAPH_VERSION", "v21.0").strip() or "v21.0"
+    try:
+        with httpx.Client(timeout=4.0) as client:
+            resp = client.get(
+                f"https://graph.facebook.com/{graph_ver}/{phone_id}",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if resp.status_code == 200:
+            return "connected"
+        if resp.status_code == 401 or (resp.status_code in (400, 403) and '"code":190' in resp.text):
+            return "expired_or_invalid_token"
+        return f"http_{resp.status_code}"
+    except Exception as exc:
+        return f"unreachable: {type(exc).__name__}"
+
+
+def _check_n8n_tcp_health() -> str:
+    """Comprueba conectividad TCP al host y puerto configurados en N8N_WEBHOOK_URL."""
+    raw_url = os.getenv("N8N_WEBHOOK_URL", N8N_WEBHOOK_URL).strip()
+    parsed = urlparse(raw_url)
+    host = parsed.hostname
+    if not host:
+        return "unreachable"
+    port = parsed.port or (443 if parsed.scheme == "https" else 80)
+    try:
+        with socket.create_connection((host, port), timeout=3.0):
+            return "reachable"
+    except OSError:
+        return "unreachable"
+
+
+def _get_external_services_health(force: bool = False) -> Dict[str, Any]:
+    """Ejecuta probes reales con caché de 30s para no saturar APIs externas."""
+    now_ts = time.time()
+    if not force:
+        with _health_cache_lock:
+            if _health_cache["services"] is not None and now_ts < _health_cache["expires_at"]:
+                return {**_health_cache["services"], "cached": True}
+
+    groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
+
+    services = {
+        "groq": _check_http_api_key(
+            "https://api.groq.com/openai/v1/models",
+            {"Authorization": f"Bearer {groq_key}"},
+            missing=not groq_key,
+        ),
+        "anthropic": _check_http_api_key(
+            "https://api.anthropic.com/v1/models",
+            {"x-api-key": anthropic_key, "anthropic-version": "2023-06-01"},
+            missing=not anthropic_key,
+        ),
+        "whatsapp": _check_whatsapp_health(),
+        "n8n": _check_n8n_tcp_health(),
+    }
+
+    with _health_cache_lock:
+        _health_cache["services"] = services
+        _health_cache["expires_at"] = time.time() + HEALTH_CACHE_TTL_SECONDS
+
+    return {**services, "cached": False}
+
+
 @app.get("/health")
-def health(db: Session = Depends(get_db)):
+def health(force: bool = Query(default=False), db: Session = Depends(get_db)):
+    """Healthcheck con verificación real de PostgreSQL y conectividad de servicios externos."""
     db_status = "error"
     try:
         db.execute(text("SELECT 1"))
@@ -1336,12 +1447,25 @@ def health(db: Session = Depends(get_db)):
     except Exception as e:
         db_status = f"unreachable: {str(e)}"
 
+    ext = _get_external_services_health(force=force)
+    services = {
+        "postgresql": db_status,
+        "groq": ext["groq"],
+        "anthropic": ext["anthropic"],
+        "whatsapp": ext["whatsapp"],
+        "n8n": ext["n8n"],
+    }
+
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "database": db_status,
         "database_type": "PostgreSQL 16",
-        "groq_configured": bool(os.getenv("GROQ_API_KEY")),
-        "anthropic_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "groq_configured": ext["groq"] == "connected",
+        "anthropic_configured": ext["anthropic"] == "connected",
+        "whatsapp_configured": ext["whatsapp"] == "connected",
+        "services": services,
+        "cache_ttl_seconds": HEALTH_CACHE_TTL_SECONDS,
+        "cached": ext["cached"],
         "timestamp": datetime.datetime.utcnow().isoformat()
     }
 
@@ -4850,12 +4974,13 @@ def send_whatsapp_cloud_message(
     clean_to = "".join(ch for ch in str(recipient_phone) if ch.isdigit())
     active_tenant = tenant_cfg or WHATSAPP_VET_TENANTS["dra-daniela-alcazar"]
 
+    env_phone_id, env_token = _get_active_whatsapp_credentials()
     effective_phone_id = (
         active_tenant.get("phone_number_id")
         or incoming_phone_number_id
-        or WHATSAPP_PHONE_NUMBER_ID
+        or env_phone_id
     )
-    effective_token = active_tenant.get("access_token") or WHATSAPP_ACCESS_TOKEN
+    effective_token = active_tenant.get("access_token") or env_token
 
     body = {
         "messaging_product": "whatsapp",
@@ -5300,17 +5425,20 @@ def generate_whatsapp_conversational_reply_ai_sync(
     )
 
 
-@app.get("/api/v1/covet/whatsapp/tenants")
+def _sanitize_tenant_view(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Devuelve una copia del perfil veterinario omitiendo tokens secretos."""
+    copy_cfg = dict(cfg)
+    copy_cfg["has_custom_token"] = bool(copy_cfg.pop("access_token", ""))
+    return copy_cfg
+
+
+@app.get("/api/v1/covet/whatsapp/tenants", dependencies=[Depends(require_admin)])
 def list_whatsapp_vet_tenants():
     """
     Lista los perfiles veterinarios Multi-Tenant activos en el servidor de Hetzner
     (Dra. Daniela Alcázar, 2ª Veterinaria Piloto y futuros clientes).
     """
-    sanitized = {}
-    for slug, cfg in WHATSAPP_VET_TENANTS.items():
-        copy_cfg = dict(cfg)
-        copy_cfg["has_custom_token"] = bool(copy_cfg.pop("access_token", ""))
-        sanitized[slug] = copy_cfg
+    sanitized = {slug: _sanitize_tenant_view(cfg) for slug, cfg in WHATSAPP_VET_TENANTS.items()}
     return {
         "status": "OK",
         "total_tenants": len(sanitized),
@@ -5323,7 +5451,7 @@ def list_whatsapp_vet_tenants():
     }
 
 
-@app.post("/api/v1/covet/whatsapp/tenants/configure")
+@app.post("/api/v1/covet/whatsapp/tenants/configure", dependencies=[Depends(require_admin)])
 def configure_whatsapp_vet_tenant(req: WhatsAppTenantConfigRequest):
     """
     Permite crear o actualizar en caliente los datos de una veterinaria piloto o cliente SaaS
@@ -5380,7 +5508,7 @@ def configure_whatsapp_vet_tenant(req: WhatsAppTenantConfigRequest):
     base_cfg["datos_transferencia"] = bank
 
     WHATSAPP_VET_TENANTS[slug] = base_cfg
-    return {"status": "UPDATED", "clinica_slug": slug, "tenant": base_cfg}
+    return {"status": "UPDATED", "clinica_slug": slug, "tenant": _sanitize_tenant_view(base_cfg)}
 
 
 @app.get("/api/v1/covet/whatsapp/webhook")

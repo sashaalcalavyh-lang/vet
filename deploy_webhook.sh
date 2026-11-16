@@ -3,7 +3,7 @@ set -e
 echo "[CoVet Deploy] 1/3 Compilando Frontend PWA..."
 cd /home/ashasasha/vet/frontend && npm run build
 echo "[CoVet Deploy] 2/3 Sincronizando código y estáticos con VPS Hetzner..."
-rsync -avz --exclude 'node_modules' --exclude '.git' /home/ashasasha/vet/ root@142.132.233.38:/opt/vet/
+rsync -avz --exclude 'node_modules' --exclude '.git' --exclude '.env' --exclude 'docker-compose.yml' /home/ashasasha/vet/ root@142.132.233.38:/opt/vet/
 ssh -n root@142.132.233.38 "mkdir -p /var/www/covet && cp -r /opt/vet/frontend/dist/* /var/www/covet/ && chown -R caddy:caddy /var/www/covet"
 echo "[CoVet Deploy] 3/3 Actualizando contenedor vet-backend..."
 ssh -n root@142.132.233.38 "cd /opt/vet && docker compose up -d --build vet-backend"
